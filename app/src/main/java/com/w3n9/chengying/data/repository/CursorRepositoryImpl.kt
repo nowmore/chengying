@@ -75,6 +75,14 @@ class CursorRepositoryImpl @Inject constructor(
         
         // Inject into system
         val currentState = _cursorState.value
+        
+        // If an app is launched, we likely want to simulate a touchscreen "hover" or just movement
+        // so that if the user clicks, it registers at the new location.
+        // However, standard touchscreens don't really have "hover". 
+        // Mice do. ShizukuInputManager defaults to TOUCHSCREEN currently.
+        // To interact with apps like a mouse, we should probably inject MOUSE events if possible,
+        // or just rely on the click injection at the specific coordinate.
+        // For now, we continue to inject HOVER_MOVE which is valid for pointers.
         shizukuInputManager.injectMotionEvent(
             android.view.MotionEvent.ACTION_HOVER_MOVE, 
             currentState.x, 
@@ -85,8 +93,17 @@ class CursorRepositoryImpl @Inject constructor(
 
     override suspend fun emitClickWithShizuku() {
         val currentState = _cursorState.value
+        
+        // If app is launched, we definitely want to click "through" to the app.
+        // The injection happens at the system level via Shizuku, so it targets the display coordinates.
+        // Whatever window is at those coordinates (our transparent presentation or the app below) will receive it.
+        // Since we set FLAG_NOT_TOUCHABLE on the Presentation when app is launched, 
+        // the event should conceptually hit the app window if we were using real touch.
+        // But here we are INJECTING. Injection goes to the WindowManager input pipeline.
+        
         shizukuInputManager.injectClick(currentState.x, currentState.y, targetDisplayId)
-        // Also emit local event for UI reaction
+        
+        // Also emit local event for UI reaction (like ripple on our cursor if we had one)
         emitClick()
     }
 }

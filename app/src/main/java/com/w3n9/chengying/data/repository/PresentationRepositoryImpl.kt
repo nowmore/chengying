@@ -29,9 +29,7 @@ class PresentationRepositoryImpl @Inject constructor(
 
         try {
             Timber.d("[PresentationRepositoryImpl] Creating and showing new presentation on display: ${display.displayId}")
-            // Note: We are using Activity Context now, so no need for TYPE_APPLICATION_OVERLAY
             presentation = SecondScreenPresentation(context, display).apply {
-                // Add a listener to nullify our reference when the system dismisses it (e.g., on display disconnect)
                 setOnDismissListener {
                     Timber.d("[PresentationRepositoryImpl] Presentation on display ${display.displayId} was dismissed by the system.")
                     if (presentation == this) {

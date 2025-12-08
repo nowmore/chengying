@@ -4,6 +4,7 @@ import android.app.Presentation
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.PixelFormat
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -118,8 +119,13 @@ class SecondScreenPresentation(
         super.onCreate(savedInstanceState)
         
         window?.setBackgroundDrawableResource(android.R.color.transparent)
+        window?.setFormat(PixelFormat.TRANSLUCENT)
         
-        window?.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+        // Add flags for transparency and interactivity control
+        // Note: We removed the TYPE_APPLICATION_OVERLAY code to fix the crash
+        window?.addFlags(
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE // Allow touches to pass through
+        )
 
         savedStateRegistryController.performRestore(savedInstanceState)
 
