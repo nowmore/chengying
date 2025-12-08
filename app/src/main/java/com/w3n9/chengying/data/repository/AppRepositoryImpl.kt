@@ -8,17 +8,21 @@ import android.os.Build
 import com.w3n9.chengying.di.IODispatcher
 import com.w3n9.chengying.domain.model.AppInfo
 import com.w3n9.chengying.domain.repository.AppRepository
+import com.w3n9.chengying.domain.repository.CursorRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
 class AppRepositoryImpl @Inject constructor(
     @ApplicationContext private val applicationContext: Context,
-    @IODispatcher private val ioDispatcher: CoroutineDispatcher
+    @IODispatcher private val ioDispatcher: CoroutineDispatcher,
+    private val cursorRepository: CursorRepository
 ) : AppRepository {
 
     override fun getInstalledApps(): Flow<List<AppInfo>> = flow {
@@ -66,6 +70,10 @@ class AppRepositoryImpl @Inject constructor(
 
                 Timber.d("Launching app $packageName on display $displayId with flags: 0x${Integer.toHexString(intent.flags)}")
                 context.startActivity(intent, options.toBundle())
+                
+                // Notify CursorRepository that an app has been launched
+                // This triggers the presentation to become transparent
+                cursorRepository.setAppLaunched(true)
                 
             } else {
                 Timber.w("No launch intent found for package: $packageName")

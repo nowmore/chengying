@@ -4,7 +4,6 @@ import android.app.Presentation
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.PixelFormat
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -118,9 +117,9 @@ class SecondScreenPresentation(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Removed explicit PixelFormat.TRANSLUCENT setting as it might be causing issues on some ROMs
-        // standard background drawable setting should be enough for transparency if needed later
-        // window?.setBackgroundDrawableResource(android.R.color.transparent) 
+        window?.setBackgroundDrawableResource(android.R.color.transparent)
+        
+        window?.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
 
         savedStateRegistryController.performRestore(savedInstanceState)
 
@@ -133,19 +132,19 @@ class SecondScreenPresentation(
                 ChengyingTheme {
                     val cursorState by cursorRepository.cursorState.collectAsStateWithLifecycle()
                     val apps by appRepository.getInstalledApps().collectAsStateWithLifecycle(initialValue = emptyList())
-                    
-                    // Reverting to simple click-to-launch logic without "overlay mode" first to stabilize
+                    val isAppLaunched by cursorRepository.isAppLaunched.collectAsStateWithLifecycle()
+
                     LaunchedEffect(Unit) {
                         cursorRepository.clickEvents.collectLatest {
-                            val clickedApp = appIconBounds.entries.find { (_, bounds) ->
-                                bounds.contains(Offset(cursorState.x, cursorState.y))
-                            }?.key
+                            if (!isAppLaunched) {
+                                val clickedApp = appIconBounds.entries.find { (_, bounds) ->
+                                    bounds.contains(Offset(cursorState.x, cursorState.y))
+                                }?.key
 
-                            if (clickedApp != null) {
-                                Toast.makeText(context, "Launching $clickedApp", Toast.LENGTH_SHORT).show()
-                                appRepository.launchApp(activityContext, clickedApp, display.displayId)
-                                // We are NOT dismissing here, trying to keep it simple.
-                                // If the app crashes, we might need to re-enable dismiss().
+                                if (clickedApp != null) {
+                                    Toast.makeText(context, "Launching $clickedApp", Toast.LENGTH_SHORT).show()
+                                    appRepository.launchApp(activityContext, clickedApp, display.displayId)
+                                }
                             }
                         }
                     }
@@ -153,16 +152,25 @@ class SecondScreenPresentation(
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF))
-                                )
+                            .then(
+                                if (isAppLaunched) {
+                                    Modifier.background(Color.Transparent)
+                                } else {
+                                    Modifier.background(
+                                        brush = Brush.verticalGradient(
+                                            colors = listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF))
+                                        )
+                                    )
+                                }
                             )
                             .onSizeChanged { size ->
                                 cursorRepository.setBounds(size.width, size.height)
                             }
                     ) {
-                        DesktopContent(apps)
+                        if (!isAppLaunched) {
+                            DesktopContent(apps)
+                        } 
+                        
                         if (cursorState.isVisible) {
                             Cursor(x = cursorState.x, y = cursorState.y)
                         }

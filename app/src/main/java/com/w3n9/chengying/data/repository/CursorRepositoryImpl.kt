@@ -24,6 +24,9 @@ class CursorRepositoryImpl @Inject constructor(
     private val _clickEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     override val clickEvents: SharedFlow<Unit> = _clickEvents.asSharedFlow()
 
+    private val _isAppLaunched = MutableStateFlow(false)
+    override val isAppLaunched: StateFlow<Boolean> = _isAppLaunched.asStateFlow()
+
     private var boundsWidth = 1920
     private var boundsHeight = 1080
     
@@ -44,6 +47,10 @@ class CursorRepositoryImpl @Inject constructor(
     // Helper to set target display from Presentation
     override fun setTargetDisplayId(displayId: Int) {
         this.targetDisplayId = displayId
+    }
+
+    override fun setAppLaunched(launched: Boolean) {
+        _isAppLaunched.value = launched
     }
 
     override fun updatePosition(deltaX: Float, deltaY: Float) {

@@ -8,6 +8,10 @@ interface CursorRepository {
     val cursorState: StateFlow<CursorState>
     val clickEvents: SharedFlow<Unit>
     
+    // Controls the visibility and mode of the presentation/cursor
+    val isAppLaunched: StateFlow<Boolean>
+    fun setAppLaunched(launched: Boolean)
+
     fun setBounds(width: Int, height: Int)
     fun updatePosition(deltaX: Float, deltaY: Float)
     fun reset()
