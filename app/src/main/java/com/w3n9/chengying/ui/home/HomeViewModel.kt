@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.w3n9.chengying.core.common.Result
 import com.w3n9.chengying.core.common.UiState
 import com.w3n9.chengying.core.common.asResult
+import com.w3n9.chengying.domain.model.DisplayMode
 import com.w3n9.chengying.domain.model.ExternalDisplay
 import com.w3n9.chengying.domain.repository.CursorRepository
 import com.w3n9.chengying.domain.repository.DisplayRepository
+import com.w3n9.chengying.domain.repository.AppRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -15,14 +17,15 @@ import timber.log.Timber
 import javax.inject.Inject
 
 sealed interface HomeEvent {
-    data class StartDesktopMode(val display: ExternalDisplay) : HomeEvent
+    data class StartDesktopMode(val display: ExternalDisplay, val mode: DisplayMode) : HomeEvent
     object StopDesktopMode : HomeEvent
 }
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val displayRepository: DisplayRepository,
-    private val cursorRepository: CursorRepository
+    private val cursorRepository: CursorRepository,
+    private val appRepository: AppRepository
 ) : ViewModel() {
 
     private val _touchpadModeActive = MutableStateFlow(false)
@@ -30,6 +33,13 @@ class HomeViewModel @Inject constructor(
 
     private val _events = MutableSharedFlow<HomeEvent>()
     val events: SharedFlow<HomeEvent> = _events.asSharedFlow()
+
+    val currentDisplayMode: StateFlow<DisplayMode> = displayRepository.currentDisplayMode
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = DisplayMode.DESKTOP
+        )
 
     val uiState: StateFlow<UiState<List<ExternalDisplay>>> = displayRepository.connectedDisplays
         .asResult()
@@ -55,13 +65,17 @@ class HomeViewModel @Inject constructor(
             initialValue = UiState.Loading
         )
 
-    fun startDesktopMode(display: ExternalDisplay) {
+    val appIsLaunched: StateFlow<Boolean> = cursorRepository.isAppLaunched
+
+    fun startSession(display: ExternalDisplay) {
+        val mode = currentDisplayMode.value
         viewModelScope.launch {
-            // Need to set the target display ID for the cursor repository so Shizuku knows where to inject events
-            cursorRepository.setTargetDisplayId(display.id)
-            
-            _touchpadModeActive.value = true
-            _events.emit(HomeEvent.StartDesktopMode(display))
+            if (mode == DisplayMode.DESKTOP) {
+                cursorRepository.setTargetDisplayId(display.id)
+                cursorRepository.setAppLaunched(false) 
+                _touchpadModeActive.value = true
+            }
+            _events.emit(HomeEvent.StartDesktopMode(display, mode))
         }
     }
 
@@ -72,12 +86,17 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun setDisplayMode(mode: DisplayMode) {
+        viewModelScope.launch {
+            displayRepository.setDisplayMode(mode)
+        }
+    }
+
     fun consumeEvent() {
-        // No-op for shared flow, but kept if we switch to state-based event handling later or for clarity
+        // No-op
     }
 
     fun onTouchpadPan(deltaX: Float, deltaY: Float) {
-        // Using Shizuku for input injection
         cursorRepository.updatePositionWithShizuku(deltaX, deltaY)
     }
 
@@ -85,5 +104,17 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             cursorRepository.emitClickWithShizuku()
         }
+    }
+
+    fun onHomeClicked() {
+        appRepository.minimizeApp()
+    }
+    
+    fun onCloseAppClicked() {
+        appRepository.closeActiveApp()
+    }
+
+    fun onToggleTaskSwitcher() {
+        cursorRepository.toggleTaskSwitcher()
     }
 }

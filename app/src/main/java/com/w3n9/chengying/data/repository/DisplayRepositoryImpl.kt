@@ -1,10 +1,10 @@
 package com.w3n9.chengying.data.repository
 
 import android.view.Display
-import com.w3n9.chengying.core.model.DisplayMode
 import com.w3n9.chengying.data.source.DisplayDataSource
 import com.w3n9.chengying.data.source.SettingsDataSource
 import com.w3n9.chengying.di.IODispatcher
+import com.w3n9.chengying.domain.model.DisplayMode
 import com.w3n9.chengying.domain.model.DisplayState
 import com.w3n9.chengying.domain.model.ExternalDisplay
 import com.w3n9.chengying.domain.repository.DisplayRepository
@@ -26,7 +26,7 @@ class DisplayRepositoryImpl @Inject constructor(
         .onStart { emit(Unit) } // Trigger initial load
         .map {
             displayDataSource.getDisplays()
-                .filter { it.displayId != Display.DEFAULT_DISPLAY } // Filter out built-in display if needed, logic might adjust
+                .filter { it.displayId != Display.DEFAULT_DISPLAY }
                 .map { display ->
                     ExternalDisplay(
                         id = display.displayId,

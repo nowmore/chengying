@@ -1,6 +1,7 @@
 package com.w3n9.chengying.ui.presentation
 
 import android.app.Presentation
+import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -15,6 +16,7 @@ import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,23 +29,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -73,19 +72,22 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.w3n9.chengying.domain.model.AppInfo
+import com.w3n9.chengying.domain.model.TaskInfo
 import com.w3n9.chengying.domain.repository.AppRepository
 import com.w3n9.chengying.domain.repository.CursorRepository
+import com.w3n9.chengying.domain.repository.TaskRepository
 import com.w3n9.chengying.ui.theme.ChengyingTheme
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.collectLatest
+import timber.log.Timber
 import kotlin.math.roundToInt
 
 class SecondScreenPresentation(
     private val activityContext: Context,
-    display: Display
+    private val display: Display
 ) : Presentation(activityContext, display), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -101,6 +103,7 @@ class SecondScreenPresentation(
     interface PresentationEntryPoint {
         fun cursorRepository(): CursorRepository
         fun appRepository(): AppRepository
+        fun taskRepository(): TaskRepository
     }
 
     private val entryPoint by lazy {
@@ -112,20 +115,26 @@ class SecondScreenPresentation(
 
     private val cursorRepository by lazy { entryPoint.cursorRepository() }
     private val appRepository by lazy { entryPoint.appRepository() }
+    private val taskRepository by lazy { entryPoint.taskRepository() }
 
     private val appIconBounds = mutableMapOf<String, Rect>()
+    private val taskSwitcherBounds = mutableMapOf<Int, Rect>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         window?.setBackgroundDrawableResource(android.R.color.transparent)
         window?.setFormat(PixelFormat.TRANSLUCENT)
-        
-        // Add flags for transparency and interactivity control
-        // Note: We removed the TYPE_APPLICATION_OVERLAY code to fix the crash
-        window?.addFlags(
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE // Allow touches to pass through
-        )
+        window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+
+        val wallpaperManager = WallpaperManager.getInstance(activityContext)
+        val wallpaperDrawable: Drawable? = try {
+            wallpaperManager.drawable
+        } catch (e: SecurityException) {
+            Timber.w(e, "Failed to get system wallpaper, permission might be missing.")
+            null
+        }
+        val wallpaperBitmap = wallpaperDrawable?.let { drawableToBitmap(it) }
 
         savedStateRegistryController.performRestore(savedInstanceState)
 
@@ -139,12 +148,32 @@ class SecondScreenPresentation(
                     val cursorState by cursorRepository.cursorState.collectAsStateWithLifecycle()
                     val apps by appRepository.getInstalledApps().collectAsStateWithLifecycle(initialValue = emptyList())
                     val isAppLaunched by cursorRepository.isAppLaunched.collectAsStateWithLifecycle()
+                    val isTaskSwitcherVisible by cursorRepository.isTaskSwitcherVisible.collectAsStateWithLifecycle()
+
+                    // Dynamic Flag Management
+                    LaunchedEffect(isAppLaunched) {
+                        if (isAppLaunched) {
+                            window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        } else {
+                            window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        }
+                    }
 
                     LaunchedEffect(Unit) {
                         cursorRepository.clickEvents.collectLatest {
-                            if (!isAppLaunched) {
+                            if (isTaskSwitcherVisible) {
+                                val cursorOffset = Offset(cursorState.x, cursorState.y)
+                                val clickedTask = taskSwitcherBounds.entries.find { (_, bounds) ->
+                                    bounds.contains(cursorOffset)
+                                }?.key
+                                if (clickedTask != null) {
+                                    taskRepository.switchToTask(clickedTask)
+                                    cursorRepository.toggleTaskSwitcher()
+                                }
+                            } else if (!isAppLaunched) {
+                                val cursorOffset = Offset(cursorState.x, cursorState.y)
                                 val clickedApp = appIconBounds.entries.find { (_, bounds) ->
-                                    bounds.contains(Offset(cursorState.x, cursorState.y))
+                                    bounds.contains(cursorOffset)
                                 }?.key
 
                                 if (clickedApp != null) {
@@ -158,25 +187,43 @@ class SecondScreenPresentation(
                     BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxSize()
-                            .then(
-                                if (isAppLaunched) {
-                                    Modifier.background(Color.Transparent)
-                                } else {
-                                    Modifier.background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF))
-                                        )
-                                    )
-                                }
-                            )
                             .onSizeChanged { size ->
                                 cursorRepository.setBounds(size.width, size.height)
                             }
                     ) {
+                        // Layer 1: Content (Desktop or Transparent for App)
                         if (!isAppLaunched) {
+                            // Show Desktop
+                            if (wallpaperBitmap != null) {
+                                Image(
+                                    bitmap = wallpaperBitmap.asImageBitmap(),
+                                    contentDescription = "Desktop Wallpaper",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            brush = Brush.verticalGradient(
+                                                colors = listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF))
+                                            )
+                                        )
+                                )
+                            }
                             DesktopContent(apps)
-                        } 
+                        } else {
+                            // App is running, so our background is transparent
+                            Spacer(Modifier.fillMaxSize().background(Color.Transparent))
+                        }
                         
+                        // Layer 2: Task Switcher (Overlay)
+                        if (isTaskSwitcherVisible) {
+                            TaskSwitcher(display.displayId)
+                        }
+                        
+                        // Layer 3: Cursor (Topmost)
                         if (cursorState.isVisible) {
                             Cursor(x = cursorState.x, y = cursorState.y)
                         }
@@ -191,61 +238,27 @@ class SecondScreenPresentation(
 
     @Composable
     private fun DesktopContent(apps: List<AppInfo>) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp)
-                    .padding(bottom = 80.dp)
-            ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp)
+        ) {
+            if (apps.isEmpty()) {
                 Text(
-                    text = "Chengying OS",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(bottom = 32.dp)
+                    text = "Loading apps...",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
-
-                if (apps.isEmpty()) {
-                    Text(
-                        text = "Loading apps...",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 100.dp),
-                        horizontalArrangement = Arrangement.spacedBy(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        items(apps) { app ->
-                            DesktopAppIcon(app)
-                        }
-                    }
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(64.dp),
-                color = Color(0xFF1E1E1E).copy(alpha = 0.9f),
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 100.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Home,
-                        contentDescription = "Start",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.width(24.dp))
+                    items(apps) { app ->
+                        DesktopAppIcon(app)
+                    }
                 }
             }
         }
@@ -290,8 +303,58 @@ class SecondScreenPresentation(
             )
         }
     }
+    
+    @Composable
+    private fun TaskSwitcher(displayId: Int) {
+        val tasks by taskRepository.getRecentTasks(displayId).collectAsStateWithLifecycle(initialValue = emptyList())
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { cursorRepository.toggleTaskSwitcher() } 
+        ) {
+            LazyRow(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                items(tasks) { task ->
+                    TaskCard(task)
+                }
+            }
+        }
+    }
 
-    private fun drawableToBitmap(drawable: Drawable): Bitmap? {
+    @Composable
+    private fun TaskCard(task: TaskInfo) {
+        Card(
+            modifier = Modifier
+                .size(200.dp, 300.dp)
+                .onGloballyPositioned { coordinates ->
+                    taskSwitcherBounds[task.taskId] = coordinates.boundsInRoot()
+                },
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val icon = drawableToBitmap(task.appIcon)
+                if (icon != null) {
+                    Image(
+                        bitmap = icon.asImageBitmap(),
+                        contentDescription = task.appName,
+                        modifier = Modifier.size(64.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(text = task.appName)
+            }
+        }
+    }
+
+    private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
+        if (drawable == null) return null
         if (drawable is BitmapDrawable) {
             return drawable.bitmap
         }

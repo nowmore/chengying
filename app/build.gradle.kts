@@ -79,8 +79,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     // Shizuku
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
@@ -89,4 +89,6 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    implementation("com.google.android.material:material:1.12.0")
 }

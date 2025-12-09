@@ -6,7 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.w3n9.chengying.core.model.DisplayMode
+import com.w3n9.chengying.domain.model.DisplayMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -22,11 +22,21 @@ class PreferencesSettingsDataSource @Inject constructor(
 
     override val displayMode: Flow<DisplayMode> = context.dataStore.data
         .map { preferences ->
-            val modeString = preferences[DISPLAY_MODE_KEY] ?: DisplayMode.INDEPENDENT.name
+            val modeString = preferences[DISPLAY_MODE_KEY]
+            
+            if (modeString == null) {
+                return@map DisplayMode.DESKTOP
+            }
+            
             try {
-                DisplayMode.valueOf(modeString)
+                // Handle legacy "INDEPENDENT" value if present
+                if (modeString == "INDEPENDENT") {
+                    DisplayMode.DESKTOP
+                } else {
+                    DisplayMode.valueOf(modeString)
+                }
             } catch (e: IllegalArgumentException) {
-                DisplayMode.INDEPENDENT
+                DisplayMode.DESKTOP
             }
         }
 

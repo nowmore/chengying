@@ -1,10 +1,12 @@
 package com.w3n9.chengying
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +15,8 @@ import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -20,6 +24,7 @@ import com.w3n9.chengying.domain.repository.PresentationRepository
 import com.w3n9.chengying.ui.home.HomeScreen
 import com.w3n9.chengying.ui.theme.ChengyingTheme
 import dagger.hilt.android.AndroidEntryPoint
+import timber.log.Timber
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -50,10 +55,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            Timber.i("Wallpaper permission granted.")
+            // Optional: Can trigger a refresh of the presentation if it's already visible
+        } else {
+            Timber.w("Wallpaper permission denied.")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Ensure we control the decor fits system windows manually
         WindowCompat.setDecorFitsSystemWindows(window, false)
         
         enableEdgeToEdge()
@@ -69,6 +84,30 @@ class MainActivity : ComponentActivity() {
         } else {
             registerReceiver(displayChangeReceiver, filter)
         }
+
+        // Request wallpaper permission on create
+        requestWallpaperPermission()
+    }
+
+    private fun requestWallpaperPermission() {
+        when {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                // Permission is already granted
+                Timber.d("Wallpaper permission already granted.")
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE) -> {
+                // Optional: Show a rationale to the user
+                Timber.i("Showing rationale for wallpaper permission.")
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            else -> {
+                // Directly request the permission
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -76,8 +115,6 @@ class MainActivity : ComponentActivity() {
         unregisterReceiver(displayChangeReceiver)
     }
     
-    // We need to re-apply immersive mode on window focus change because system UI might reappear
-    // e.g. when pulling down notification shade and dismissing it
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
@@ -96,7 +133,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun hideSystemUI() {
-        // We need to set this false to allow drawing behind bars (and then hiding them)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         
         WindowInsetsControllerCompat(window, window.decorView).let { controller ->

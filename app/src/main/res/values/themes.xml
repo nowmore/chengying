@@ -2,4 +2,9 @@
 <resources>
 
     <style name="Theme.Chengying" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Chengying.Wallpaper" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowElevation">0dp</item>
+    </style>
 </resources>

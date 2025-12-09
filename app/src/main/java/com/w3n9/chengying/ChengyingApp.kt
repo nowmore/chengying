@@ -17,5 +17,7 @@ class ChengyingApp : Application() {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
+
+
     }
 }

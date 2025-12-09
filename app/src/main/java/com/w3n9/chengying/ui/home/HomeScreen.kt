@@ -3,7 +3,6 @@ package com.w3n9.chengying.ui.home
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.hardware.display.DisplayManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
@@ -14,10 +13,23 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -33,8 +45,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.w3n9.chengying.MainActivity
 import com.w3n9.chengying.core.common.UiState
+import com.w3n9.chengying.domain.model.DisplayMode
 import com.w3n9.chengying.domain.model.ExternalDisplay
-import timber.log.Timber
 
 @Composable
 fun HomeScreen(
@@ -42,33 +54,33 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val touchpadModeActive by viewModel.touchpadModeActive.collectAsStateWithLifecycle()
+    val currentDisplayMode by viewModel.currentDisplayMode.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle(initialValue = null)
+    val appIsLaunched by viewModel.appIsLaunched.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     
-    // Handle events from ViewModel
     LaunchedEffect(events) {
         val event = events
         if (event != null) {
             when (event) {
                 is HomeEvent.StartDesktopMode -> {
-                    Timber.d("Handling StartDesktopMode event for display ${event.display.id}")
                     val activity = context.findActivity() as? MainActivity
                     if (activity != null) {
-                        val displayManager = activity.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-                        val targetDisplay = displayManager.getDisplay(event.display.id)
-                        if (targetDisplay != null) {
-                            activity.presentationRepository.showPresentation(targetDisplay)
-                            activity.enterTouchpadMode()
+                        if (event.mode == DisplayMode.DESKTOP) {
+                            val displayManager = activity.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+                            val targetDisplay = displayManager.getDisplay(event.display.id)
+                            if (targetDisplay != null) {
+                                activity.presentationRepository.showPresentation(targetDisplay)
+                                activity.enterTouchpadMode()
+                            } 
                         } else {
-                            Timber.e("Target display ${event.display.id} not found")
+                            activity.presentationRepository.dismissPresentation()
+                            activity.exitTouchpadMode()
                         }
-                    } else {
-                        Timber.e("MainActivity not found in context")
-                    }
+                    } 
                 }
                 is HomeEvent.StopDesktopMode -> {
-                    Timber.d("Handling StopDesktopMode event")
                     val activity = context.findActivity() as? MainActivity
                     if (activity != null) {
                         activity.presentationRepository.dismissPresentation()
@@ -96,17 +108,26 @@ fun HomeScreen(
         label = "ScreenModeAnimation"
     ) { targetState ->
         if (targetState) {
-            TouchpadScreen(viewModel)
+            TouchpadScreen(
+                viewModel = viewModel,
+                appIsLaunched = appIsLaunched
+            )
         } else {
-            MainControlScreen(uiState, onStartDesktop = {
-                viewModel.startDesktopMode(it)
-            })
+            MainControlScreen(
+                uiState = uiState,
+                currentMode = currentDisplayMode,
+                onModeSelected = viewModel::setDisplayMode,
+                onStartSession = viewModel::startSession
+            )
         }
     }
 }
 
 @Composable
-fun TouchpadScreen(viewModel: HomeViewModel) {
+fun TouchpadScreen(
+    viewModel: HomeViewModel,
+    appIsLaunched: Boolean
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -121,12 +142,51 @@ fun TouchpadScreen(viewModel: HomeViewModel) {
                     onTap = { viewModel.onTouchpadClick() }
                 )
             }
-    )
+    ) {
+        // Controls at the bottom
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // Home button (always visible)
+            FloatingActionButton(
+                onClick = { viewModel.onHomeClicked() },
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Icon(Icons.Default.Home, contentDescription = "Home")
+            }
+            
+            // Task Switcher button (always visible)
+            FloatingActionButton(
+                onClick = { viewModel.onToggleTaskSwitcher() },
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Icon(Icons.Default.Apps, contentDescription = "Task Switcher")
+            }
+
+            // Close button (visible only when an app is launched)
+            if (appIsLaunched) {
+                FloatingActionButton(
+                    onClick = { viewModel.onCloseAppClicked() },
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close App", tint = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainControlScreen(uiState: UiState<List<ExternalDisplay>>, onStartDesktop: (ExternalDisplay) -> Unit) {
+fun MainControlScreen(
+    uiState: UiState<List<ExternalDisplay>>,
+    currentMode: DisplayMode,
+    onModeSelected: (DisplayMode) -> Unit,
+    onStartSession: (ExternalDisplay) -> Unit
+) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -138,47 +198,81 @@ fun MainControlScreen(uiState: UiState<List<ExternalDisplay>>, onStartDesktop: (
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(16.dp),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            when (uiState) {
-                is UiState.Loading -> {
-                    CircularProgressIndicator()
-                }
-                is UiState.Success -> {
-                    if (uiState.data.isEmpty()) {
+            
+            DisplayModeSelector(currentMode, onModeSelected)
+            
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                when (uiState) {
+                    is UiState.Loading -> {
+                        CircularProgressIndicator()
+                    }
+                    is UiState.Success -> {
+                        if (uiState.data.isEmpty()) {
+                            InfoMessageCard(
+                                icon = Icons.Default.Warning,
+                                title = "No Display Found",
+                                message = "Please connect an external display via USB-C or Miracast."
+                            )
+                        } else {
+                            DisplayList(displays = uiState.data, onStartSession = onStartSession)
+                        }
+                    }
+                    is UiState.Error -> {
                         InfoMessageCard(
                             icon = Icons.Default.Warning,
-                            title = "No Display Found",
-                            message = "Please connect an external display via USB-C or Miracast."
+                            title = "Error",
+                            message = uiState.message
                         )
-                    } else {
-                        DisplayList(displays = uiState.data, onStartDesktop = onStartDesktop)
                     }
-                }
-                is UiState.Error -> {
-                    InfoMessageCard(
-                        icon = Icons.Default.Warning,
-                        title = "Error",
-                        message = uiState.message
-                    )
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DisplayList(displays: List<ExternalDisplay>, onStartDesktop: (ExternalDisplay) -> Unit) {
+fun DisplayModeSelector(
+    currentMode: DisplayMode,
+    onModeSelected: (DisplayMode) -> Unit
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        DisplayMode.entries.forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = currentMode == mode,
+                onClick = { onModeSelected(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = DisplayMode.entries.size)
+            ) {
+                Text(
+                    text = when(mode) {
+                        DisplayMode.MIRROR -> "Mirror Mode"
+                        DisplayMode.DESKTOP -> "Desktop Mode"
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DisplayList(displays: List<ExternalDisplay>, onStartSession: (ExternalDisplay) -> Unit) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         items(displays) { display ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -199,10 +293,10 @@ fun DisplayList(displays: List<ExternalDisplay>, onStartDesktop: (ExternalDispla
                         )
                     }
                     Button(
-                        onClick = { onStartDesktop(display) },
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
+                        onClick = { onStartSession(display) },
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                     ) {
-                        Text("Launch")
+                        Text("Start")
                     }
                 }
             }
@@ -216,14 +310,18 @@ fun InfoMessageCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(icon, contentDescription = title, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, contentDescription = title, modifier = Modifier.size(48.dp))
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))

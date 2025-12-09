@@ -2,12 +2,14 @@ package com.w3n9.chengying.di
 
 import com.w3n9.chengying.data.repository.AppRepositoryImpl
 import com.w3n9.chengying.data.repository.DisplayRepositoryImpl
+import com.w3n9.chengying.data.repository.TaskRepositoryImpl
 import com.w3n9.chengying.data.source.DisplayDataSource
 import com.w3n9.chengying.data.source.LocalDisplayDataSource
 import com.w3n9.chengying.data.source.PreferencesSettingsDataSource
 import com.w3n9.chengying.data.source.SettingsDataSource
 import com.w3n9.chengying.domain.repository.AppRepository
 import com.w3n9.chengying.domain.repository.DisplayRepository
+import com.w3n9.chengying.domain.repository.TaskRepository
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -41,4 +43,10 @@ abstract class DataModule {
     abstract fun bindAppRepository(
         appRepositoryImpl: AppRepositoryImpl
     ): AppRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTaskRepository(
+        taskRepositoryImpl: TaskRepositoryImpl
+    ): TaskRepository
 }
