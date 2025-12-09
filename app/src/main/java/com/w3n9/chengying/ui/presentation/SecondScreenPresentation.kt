@@ -115,7 +115,11 @@ class SecondScreenPresentation(
 
     private val cursorRepository by lazy { entryPoint.cursorRepository() }
     private val appRepository by lazy { entryPoint.appRepository() }
-    private val taskRepository by lazy { entryPoint.taskRepository() }
+    private val taskRepository by lazy { 
+        entryPoint.taskRepository().also { repo ->
+            (repo as? com.w3n9.chengying.data.repository.TaskRepositoryImpl)?.setTargetDisplayId(display.displayId)
+        }
+    }
 
     private val appIconBounds = mutableMapOf<String, Rect>()
     private val taskSwitcherBounds = mutableMapOf<Int, Rect>()
@@ -127,14 +131,24 @@ class SecondScreenPresentation(
         window?.setFormat(PixelFormat.TRANSLUCENT)
         window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
 
-        val wallpaperManager = WallpaperManager.getInstance(activityContext)
-        val wallpaperDrawable: Drawable? = try {
+        val wallpaperManager = WallpaperManager.getInstance(context)
+        val wallpaperDrawable: Drawable? = runCatching {
+            Timber.d("[SecondScreenPresentation::onCreate] Attempting to retrieve system wallpaper")
             wallpaperManager.drawable
-        } catch (e: SecurityException) {
-            Timber.w(e, "Failed to get system wallpaper, permission might be missing.")
-            null
+        }.onSuccess {
+            Timber.i("[SecondScreenPresentation::onCreate] Wallpaper drawable retrieved successfully: ${it?.intrinsicWidth}x${it?.intrinsicHeight}")
+        }.onFailure { e ->
+            when (e) {
+                is SecurityException -> Timber.e(e, "[SecondScreenPresentation::onCreate] Permission denied for wallpaper access")
+                else -> Timber.e(e, "[SecondScreenPresentation::onCreate] Failed to retrieve system wallpaper")
+            }
+        }.getOrNull()
+        
+        val wallpaperBitmap = wallpaperDrawable?.let { drawable ->
+            drawableToBitmap(drawable)?.also { bitmap ->
+                Timber.i("[SecondScreenPresentation::onCreate] Wallpaper bitmap created: ${bitmap.width}x${bitmap.height}")
+            }
         }
-        val wallpaperBitmap = wallpaperDrawable?.let { drawableToBitmap(it) }
 
         savedStateRegistryController.performRestore(savedInstanceState)
 
@@ -163,11 +177,22 @@ class SecondScreenPresentation(
                         cursorRepository.clickEvents.collectLatest {
                             if (isTaskSwitcherVisible) {
                                 val cursorOffset = Offset(cursorState.x, cursorState.y)
-                                val clickedTask = taskSwitcherBounds.entries.find { (_, bounds) ->
-                                    bounds.contains(cursorOffset)
+                                Timber.d("[ClickEvent] TaskSwitcher click at: x=${cursorOffset.x}, y=${cursorOffset.y}")
+                                Timber.d("[ClickEvent] Available task bounds: ${taskSwitcherBounds.size} tasks")
+                                
+                                val clickedTask = taskSwitcherBounds.entries.find { (taskId, bounds) ->
+                                    val contains = bounds.contains(cursorOffset)
+                                    Timber.v("[ClickEvent] Checking task $taskId: bounds=$bounds, contains=$contains")
+                                    contains
                                 }?.key
+                                
                                 if (clickedTask != null) {
+                                    Timber.i("[ClickEvent] Switching to task: $clickedTask")
                                     taskRepository.switchToTask(clickedTask)
+                                    cursorRepository.setAppLaunched(true)
+                                    cursorRepository.toggleTaskSwitcher()
+                                } else {
+                                    Timber.d("[ClickEvent] No task clicked, closing TaskSwitcher")
                                     cursorRepository.toggleTaskSwitcher()
                                 }
                             } else if (!isAppLaunched) {
@@ -311,14 +336,22 @@ class SecondScreenPresentation(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.5f))
-                .clickable { cursorRepository.toggleTaskSwitcher() } 
         ) {
-            LazyRow(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(tasks) { task ->
-                    TaskCard(task)
+            if (tasks.isEmpty()) {
+                Text(
+                    text = "No recent tasks",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                LazyRow(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(tasks) { task ->
+                        TaskCard(task)
+                    }
                 }
             }
         }
@@ -330,12 +363,19 @@ class SecondScreenPresentation(
             modifier = Modifier
                 .size(200.dp, 300.dp)
                 .onGloballyPositioned { coordinates ->
-                    taskSwitcherBounds[task.taskId] = coordinates.boundsInRoot()
+                    val bounds = coordinates.boundsInRoot()
+                    taskSwitcherBounds[task.taskId] = bounds
+                    Timber.d("[TaskCard] Task ${task.taskId} bounds: left=${bounds.left}, top=${bounds.top}, right=${bounds.right}, bottom=${bounds.bottom}")
                 },
-            elevation = CardDefaults.cardElevation(8.dp)
+            elevation = CardDefaults.cardElevation(8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -348,40 +388,52 @@ class SecondScreenPresentation(
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(text = task.appName)
+                Text(
+                    text = task.appName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
         }
     }
 
     private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
-        if (drawable == null) return null
-        if (drawable is BitmapDrawable) {
-            return drawable.bitmap
-        }
-        if (drawable is AdaptiveIconDrawable) {
-            val bitmap = Bitmap.createBitmap(
-                drawable.intrinsicWidth.takeIf { it > 0 } ?: 1,
-                drawable.intrinsicHeight.takeIf { it > 0 } ?: 1,
-                Bitmap.Config.ARGB_8888
-            )
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            return bitmap
-        }
-        try {
-            val bitmap = Bitmap.createBitmap(
-                drawable.intrinsicWidth.takeIf { it > 0 } ?: 100,
-                drawable.intrinsicHeight.takeIf { it > 0 } ?: 100,
-                Bitmap.Config.ARGB_8888
-            )
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            return bitmap
-        } catch (e: Exception) {
+        if (drawable == null) {
+            Timber.w("[SecondScreenPresentation::drawableToBitmap] Drawable is null")
             return null
         }
+        
+        return runCatching {
+            when (drawable) {
+                is BitmapDrawable -> {
+                    Timber.d("[SecondScreenPresentation::drawableToBitmap] Converting BitmapDrawable")
+                    drawable.bitmap
+                }
+                is AdaptiveIconDrawable -> {
+                    Timber.d("[SecondScreenPresentation::drawableToBitmap] Converting AdaptiveIconDrawable")
+                    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1
+                    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                    bitmap
+                }
+                else -> {
+                    Timber.d("[SecondScreenPresentation::drawableToBitmap] Converting generic Drawable: ${drawable.javaClass.simpleName}")
+                    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 100
+                    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 100
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                    bitmap
+                }
+            }
+        }.onFailure { e ->
+            Timber.e(e, "[SecondScreenPresentation::drawableToBitmap] Failed to convert drawable to bitmap")
+        }.getOrNull()
     }
 
     @Composable

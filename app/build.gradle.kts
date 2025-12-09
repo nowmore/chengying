@@ -81,6 +81,9 @@ dependencies {
     // Shizuku
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    
+    // Hidden API Bypass
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)

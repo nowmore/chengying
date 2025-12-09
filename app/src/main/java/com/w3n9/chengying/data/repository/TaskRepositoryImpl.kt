@@ -11,117 +11,226 @@ import com.w3n9.chengying.domain.repository.TaskRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
 import timber.log.Timber
-import java.lang.reflect.Proxy
 import javax.inject.Inject
 import javax.inject.Singleton
-
-// Minimal IActivityManager interface for our dynamic proxy
-interface IActivityManager : android.os.IInterface {
-    fun getRecentTasks(maxNum: Int, flags: Int, userId: Int): List<ActivityManager.RecentTaskInfo>
-    fun moveTaskToFront(taskId: Int, flags: Int, options: android.os.Bundle?)
-}
 
 @Singleton
 class TaskRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
 ) : TaskRepository {
 
-    private val activityManager: IActivityManager? by lazy {
-        try {
-            val binder = ShizukuBinderWrapper(SystemServiceHelper.getSystemService("activity"))
-            val serviceManagerClass = Class.forName("android.app.IActivityManager\$Stub")
-            val asInterfaceMethod = serviceManagerClass.getMethod("asInterface", IBinder::class.java)
-            val realActivityManager = asInterfaceMethod.invoke(null, binder)
+    private var targetDisplayId: Int = 0
 
-            Proxy.newProxyInstance(
-                IActivityManager::class.java.classLoader,
-                arrayOf(IActivityManager::class.java)
-            ) { _, method, args ->
-                try {
-                    val finalArgs = args ?: emptyArray()
-                    realActivityManager?.javaClass?.getMethod(method.name, *method.parameterTypes)
-                        ?.invoke(realActivityManager, *finalArgs)
-                } catch (e: Exception) {
-                    Timber.e(e, "Dynamic proxy invocation failed for ${method.name}")
-                    if (method.returnType == Void.TYPE || method.returnType.isPrimitive) {
-                        null
-                    } else {
-                        throw e
-                    }
-                }
-            } as IActivityManager
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to create IActivityManager proxy")
-            null
+    init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            HiddenApiBypass.addHiddenApiExemptions("")
+            Timber.d("[TaskRepositoryImpl::init] HiddenApiBypass enabled")
         }
     }
+    
+    fun setTargetDisplayId(displayId: Int) {
+        targetDisplayId = displayId
+        Timber.d("[TaskRepositoryImpl::setTargetDisplayId] Set target display to: $displayId")
+    }
 
-    @SuppressLint("NewApi")
+    private val activityTaskManager: Any? by lazy {
+        runCatching {
+            Timber.d("[TaskRepositoryImpl::init] Initializing ActivityTaskManager, SDK=${Build.VERSION.SDK_INT}")
+            
+            if (!Shizuku.pingBinder()) {
+                Timber.e("[TaskRepositoryImpl::init] Shizuku binder is not alive")
+                return@runCatching null
+            }
+            
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                Timber.e("[TaskRepositoryImpl::init] Shizuku permission not granted")
+                return@runCatching null
+            }
+            
+            val serviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                "activity_task"
+            } else {
+                "activity"
+            }
+            
+            Timber.d("[TaskRepositoryImpl::init] Getting system service: $serviceName")
+            val binder = SystemServiceHelper.getSystemService(serviceName)
+            if (binder == null) {
+                Timber.e("[TaskRepositoryImpl::init] Failed to get system service: $serviceName")
+                return@runCatching null
+            }
+            
+            val wrappedBinder = ShizukuBinderWrapper(binder)
+            Timber.d("[TaskRepositoryImpl::init] Binder wrapped successfully")
+            
+            val interfaceClassName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                "android.app.IActivityTaskManager"
+            } else {
+                "android.app.IActivityManager"
+            }
+            
+            val stubClassName = "$interfaceClassName\$Stub"
+            val stubClass = Class.forName(stubClassName)
+            
+            val asInterfaceMethod = stubClass.getDeclaredMethod("asInterface", IBinder::class.java)
+            val manager = asInterfaceMethod.invoke(null, wrappedBinder)
+            
+            Timber.i("[TaskRepositoryImpl::init] ActivityTaskManager initialized successfully: ${manager?.javaClass?.name}")
+            manager
+        }.onFailure { e ->
+            Timber.e(e, "[TaskRepositoryImpl::init] Failed to create ActivityTaskManager proxy")
+        }.getOrNull()
+    }
+
+    @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
     override fun getRecentTasks(displayId: Int): Flow<List<TaskInfo>> = flow {
-        val am = activityManager
-        // Guard against API level and permission issues
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED || am == null) {
+        val manager = activityTaskManager
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED || manager == null) {
+            Timber.w("[TaskRepositoryImpl::getRecentTasks] Shizuku permission denied or manager null")
             emit(emptyList())
             return@flow
         }
 
-        try {
-            val allTasks = am.getRecentTasks(100, 0, 0)
-
-            val displayTasks = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                allTasks.filter { task ->
-                    try {
-                        val field = task.javaClass.getField("displayId")
-                        val taskDisplayId = field.getInt(task)
-                        taskDisplayId == displayId
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to get task displayId")
-                        false
-                    }
-                }
+        runCatching {
+            val parcelableListClass = Class.forName("android.content.pm.ParceledListSlice")
+            
+            val getRecentTasksMethod = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                manager.javaClass.getMethod(
+                    "getRecentTasks",
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
             } else {
-                Timber.w ("task has no displayId, get emptyList")
-                emptyList()
+                manager.javaClass.getMethod(
+                    "getRecentTasks",
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType
+                )
+            }
+            
+            Timber.d("[TaskRepositoryImpl::getRecentTasks] Calling getRecentTasks with maxNum=100, flags=0, userId=0")
+            val parceledListSlice = getRecentTasksMethod.invoke(manager, 100, 0, 0)
+            
+            if (parceledListSlice == null) {
+                Timber.w("[TaskRepositoryImpl::getRecentTasks] getRecentTasks returned null ParceledListSlice")
+                emit(emptyList())
+                return@flow
+            }
+            
+            val getListMethod = parcelableListClass.getMethod("getList")
+            @Suppress("UNCHECKED_CAST")
+            val recentTaskInfoList = getListMethod.invoke(parceledListSlice) as? List<*>
+            
+            if (recentTaskInfoList == null) {
+                Timber.w("[TaskRepositoryImpl::getRecentTasks] ParceledListSlice.getList() returned null")
+                emit(emptyList())
+                return@flow
             }
 
-            val tasks = displayTasks
-                .filter { it.baseIntent.component?.packageName != context.packageName }
-                .mapNotNull { task ->
-                    val packageName = task.baseIntent.component?.packageName ?: return@mapNotNull null
-                    val pm = context.packageManager
-                    try {
-                        val appInfo = pm.getApplicationInfo(packageName, 0)
-                        TaskInfo(
-                            taskId = task.taskId,
-                            packageName = packageName,
-                            appName = pm.getApplicationLabel(appInfo).toString(),
-                            appIcon = pm.getApplicationIcon(appInfo)
-                        )
-                    } catch (e: PackageManager.NameNotFoundException) {
-                        null // App might have been uninstalled
+            val displayTasks = recentTaskInfoList.mapNotNull { taskInfoObj ->
+                runCatching {
+                    val taskId = taskInfoObj?.javaClass?.getField("taskId")?.getInt(taskInfoObj) ?: -1
+                    val taskDisplayId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        taskInfoObj?.javaClass?.getField("displayId")?.getInt(taskInfoObj) ?: -1
+                    } else {
+                        -1
                     }
-                }
+                    val baseIntent = taskInfoObj?.javaClass?.getField("baseIntent")?.get(taskInfoObj) as? android.content.Intent
+                    val packageName = baseIntent?.component?.packageName
+
+                    if (taskDisplayId == displayId && packageName != null && packageName != context.packageName) {
+                        Triple(taskId, packageName, baseIntent)
+                    } else {
+                        null
+                    }
+                }.onFailure { e ->
+                    Timber.e(e, "[TaskRepositoryImpl::getRecentTasks] Failed to parse task info")
+                }.getOrNull()
+            }
+
+            val tasks = displayTasks.mapNotNull { (taskId, packageName, _) ->
+                runCatching {
+                    val pm = context.packageManager
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    TaskInfo(
+                        taskId = taskId,
+                        packageName = packageName,
+                        appName = pm.getApplicationLabel(appInfo).toString(),
+                        appIcon = pm.getApplicationIcon(appInfo)
+                    )
+                }.onFailure { e ->
+                    Timber.w(e, "[TaskRepositoryImpl::getRecentTasks] App not found: $packageName")
+                }.getOrNull()
+            }
+
+            if (tasks.isNotEmpty()) {
+                Timber.i("[TaskRepositoryImpl::getRecentTasks] Emitting ${tasks.size} tasks for displayId=$displayId")
+            }
             emit(tasks)
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to get recent tasks")
+        }.onFailure { e ->
+            Timber.e(e, "[TaskRepositoryImpl::getRecentTasks] Failed to get recent tasks")
             emit(emptyList())
         }
     }
 
+    @SuppressLint("PrivateApi")
     override fun switchToTask(taskId: Int) {
-        val am = activityManager
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED || am == null) {
+        val manager = activityTaskManager
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED || manager == null) {
+            Timber.w("[TaskRepositoryImpl::switchToTask] Shizuku permission denied or manager null")
             return
         }
 
-        try {
-            am.moveTaskToFront(taskId, 0, null)
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to switch task")
+        runCatching {
+            Timber.d("[TaskRepositoryImpl::switchToTask] Attempting to switch to task $taskId on display $targetDisplayId")
+            
+            val activityOptionsClass = Class.forName("android.app.ActivityOptions")
+            val makeBasicMethod = activityOptionsClass.getMethod("makeBasic")
+            val activityOptions = makeBasicMethod.invoke(null)
+            
+            val setLaunchDisplayIdMethod = activityOptionsClass.getMethod(
+                "setLaunchDisplayId",
+                Int::class.javaPrimitiveType
+            )
+            setLaunchDisplayIdMethod.invoke(activityOptions, targetDisplayId)
+            
+            val setTaskOverlayMethod = runCatching {
+                activityOptionsClass.getMethod("setTaskOverlay", Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+            }.getOrNull()
+            setTaskOverlayMethod?.invoke(activityOptions, true, true)
+            
+            val toBundleMethod = activityOptionsClass.getMethod("toBundle")
+            val options = toBundleMethod.invoke(activityOptions) as android.os.Bundle
+            
+            val startActivityFromRecentsMethod = manager.javaClass.getMethod(
+                "startActivityFromRecents",
+                Int::class.javaPrimitiveType,
+                android.os.Bundle::class.java
+            )
+            
+            val result = startActivityFromRecentsMethod.invoke(manager, taskId, options)
+            Timber.i("[TaskRepositoryImpl::switchToTask] startActivityFromRecents returned: $result for task $taskId")
+            
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                runCatching {
+                    val chengyingAm = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    val chengyingTasks = chengyingAm.appTasks
+                    chengyingTasks.firstOrNull()?.moveToFront()
+                    Timber.d("[TaskRepositoryImpl::switchToTask] Moved Chengying back to front on main display")
+                }.onFailure { e ->
+                    Timber.w(e, "[TaskRepositoryImpl::switchToTask] Failed to move Chengying to front")
+                }
+            }, 100)
+            
+        }.onFailure { e ->
+            Timber.e(e, "[TaskRepositoryImpl::switchToTask] Failed to switch task: $taskId")
         }
     }
 }
