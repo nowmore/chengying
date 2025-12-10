@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Chengying</string>
+    <string name="accessibility_service_description">Chengying uses this service to simulate touch events on the external display. This allows you to interact with apps running on the secondary screen using your phone as a touchpad.</string>
 </resources>

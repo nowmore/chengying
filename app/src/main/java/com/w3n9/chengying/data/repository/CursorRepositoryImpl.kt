@@ -1,6 +1,5 @@
 package com.w3n9.chengying.data.repository
 
-import com.w3n9.chengying.data.source.ShizukuInputManager
 import com.w3n9.chengying.domain.model.CursorState
 import com.w3n9.chengying.domain.repository.CursorRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -15,7 +14,7 @@ import javax.inject.Singleton
 
 @Singleton
 class CursorRepositoryImpl @Inject constructor(
-    private val shizukuInputManager: ShizukuInputManager
+    private val accessibilityInputManager: com.w3n9.chengying.data.source.AccessibilityInputManager
 ) : CursorRepository {
 
     private val _cursorState = MutableStateFlow(CursorState())
@@ -75,18 +74,19 @@ class CursorRepositoryImpl @Inject constructor(
 
     override fun updatePositionWithShizuku(deltaX: Float, deltaY: Float) {
         updatePosition(deltaX, deltaY)
-        val currentState = _cursorState.value
-        shizukuInputManager.injectMotionEvent(
-            android.view.MotionEvent.ACTION_HOVER_MOVE, 
-            currentState.x, 
-            currentState.y, 
-            targetDisplayId
-        )
     }
 
     override suspend fun emitClickWithShizuku() {
         val currentState = _cursorState.value
-        shizukuInputManager.injectClick(currentState.x, currentState.y, targetDisplayId)
-        emitClick()
+        
+        val success = if (accessibilityInputManager.isEnabled()) {
+            accessibilityInputManager.injectClick(currentState.x, currentState.y, targetDisplayId)
+        } else {
+            false
+        }
+        
+        if (success) {
+            emitClick()
+        }
     }
 }

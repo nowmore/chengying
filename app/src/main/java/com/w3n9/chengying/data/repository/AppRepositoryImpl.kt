@@ -95,16 +95,6 @@ class AppRepositoryImpl @Inject constructor(
             // Set launch bounds to trick apps into landscape
             options.setLaunchBounds(Rect(0, 0, width, height))
 
-            // Force Fullscreen Mode
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    val method = ActivityOptions::class.java.getMethod("setLaunchWindowingMode", Int::class.javaPrimitiveType)
-                    method.invoke(options, 1) // WINDOWING_MODE_FULLSCREEN
-                } catch (e: Exception) {
-                    Timber.w("Failed to set windowing mode: ${e.message}")
-                }
-            }
-
             Timber.d("Launching app $packageName on display $displayId with bounds: $width x $height")
             context.startActivity(intent, options.toBundle())
             

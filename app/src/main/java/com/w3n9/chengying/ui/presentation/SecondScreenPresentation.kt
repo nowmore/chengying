@@ -1,7 +1,7 @@
 package com.w3n9.chengying.ui.presentation
 
 import android.app.Presentation
-import android.app.WallpaperManager
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -131,28 +131,18 @@ class SecondScreenPresentation(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        window?.setBackgroundDrawableResource(android.R.color.transparent)
-        window?.setFormat(PixelFormat.TRANSLUCENT)
-        window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-
-        val wallpaperManager = WallpaperManager.getInstance(context)
-        val wallpaperDrawable: Drawable? = runCatching {
-            Timber.d("[SecondScreenPresentation::onCreate] Attempting to retrieve system wallpaper")
-            wallpaperManager.drawable
-        }.onSuccess {
-            Timber.i("[SecondScreenPresentation::onCreate] Wallpaper drawable retrieved successfully: ${it?.intrinsicWidth}x${it?.intrinsicHeight}")
-        }.onFailure { e ->
-            when (e) {
-                is SecurityException -> Timber.e(e, "[SecondScreenPresentation::onCreate] Permission denied for wallpaper access")
-                else -> Timber.e(e, "[SecondScreenPresentation::onCreate] Failed to retrieve system wallpaper")
-            }
-        }.getOrNull()
-        
-        val wallpaperBitmap = wallpaperDrawable?.let { drawable ->
-            drawableToBitmap(drawable)?.also { bitmap ->
-                Timber.i("[SecondScreenPresentation::onCreate] Wallpaper bitmap created: ${bitmap.width}x${bitmap.height}")
-            }
+        window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setFormat(PixelFormat.TRANSLUCENT)
+            clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+            addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+            addFlags(WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+            
+            Timber.d("[SecondScreenPresentation::onCreate] Window configured: NOT_FOCUSABLE | NOT_TOUCH_MODAL")
         }
+
+
 
         savedStateRegistryController.performRestore(savedInstanceState)
 
@@ -168,12 +158,37 @@ class SecondScreenPresentation(
                     val isAppLaunched by cursorRepository.isAppLaunched.collectAsStateWithLifecycle()
                     val isTaskSwitcherVisible by cursorRepository.isTaskSwitcherVisible.collectAsStateWithLifecycle()
 
-                    // Dynamic Flag Management
+                    // Show cursor overlay immediately
+                    LaunchedEffect(Unit) {
+                        val accessibilityService = com.w3n9.chengying.service.ChengyingAccessibilityService.getInstance()
+                        accessibilityService?.showCursorOverlay(display.displayId)
+                        Timber.i("[SecondScreenPresentation] Cursor overlay shown")
+                    }
+                    
+                    // Update cursor position in accessibility overlay
+                    LaunchedEffect(cursorState.x, cursorState.y, cursorState.isVisible) {
+                        val accessibilityService = com.w3n9.chengying.service.ChengyingAccessibilityService.getInstance()
+                        accessibilityService?.updateCursor(cursorState.x, cursorState.y, cursorState.isVisible)
+                    }
+                    
+                    // Hide/Show Presentation window based on app state
                     LaunchedEffect(isAppLaunched) {
-                        if (isAppLaunched) {
-                            window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-                        } else {
-                            window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        window?.apply {
+                            if (isAppLaunched) {
+                                // App is running - hide Presentation window completely
+                                attributes = attributes?.apply {
+                                    alpha = 0f
+                                    flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                                }
+                                Timber.i("[SecondScreenPresentation] App launched - Presentation hidden")
+                            } else {
+                                // Desktop mode - show Presentation window
+                                attributes = attributes?.apply {
+                                    alpha = 1f
+                                    flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                                }
+                                Timber.i("[SecondScreenPresentation] Desktop mode - Presentation visible")
+                            }
                         }
                     }
 
@@ -222,25 +237,16 @@ class SecondScreenPresentation(
                     ) {
                         // Layer 1: Content (Desktop or Transparent for App)
                         if (!isAppLaunched) {
-                            // Show Desktop
-                            if (wallpaperBitmap != null) {
-                                Image(
-                                    bitmap = wallpaperBitmap.asImageBitmap(),
-                                    contentDescription = "Desktop Wallpaper",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            brush = Brush.verticalGradient(
-                                                colors = listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF))
-                                            )
+                            // Show Desktop with gradient background
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        brush = Brush.verticalGradient(
+                                            colors = listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF))
                                         )
-                                )
-                            }
+                                    )
+                            )
                             DesktopContent(apps)
                         } else {
                             // App is running, so our background is transparent
@@ -252,10 +258,7 @@ class SecondScreenPresentation(
                             TaskSwitcher(display.displayId)
                         }
                         
-                        // Layer 3: Cursor (Topmost)
-                        if (cursorState.isVisible) {
-                            Cursor(x = cursorState.x, y = cursorState.y)
-                        }
+                        // Cursor is now rendered in accessibility overlay, not here
                     }
                 }
             }
@@ -311,16 +314,12 @@ class SecondScreenPresentation(
                     .background(Color.White.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
-                val bitmap = drawableToBitmap(app.icon)
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = app.label,
-                        modifier = Modifier.size(48.dp)
-                    )
-                } else {
-                    Box(modifier = Modifier.size(48.dp).background(Color.Gray))
-                }
+                // Placeholder for app icon
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(Color.White.copy(alpha = 0.3f))
+                )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -400,14 +399,12 @@ class SecondScreenPresentation(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                val icon = drawableToBitmap(task.appIcon)
-                if (icon != null) {
-                    Image(
-                        bitmap = icon.asImageBitmap(),
-                        contentDescription = task.appName,
-                        modifier = Modifier.size(64.dp)
-                    )
-                }
+                // Placeholder for task icon
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(Color.White.copy(alpha = 0.3f))
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = task.appName,
@@ -419,43 +416,6 @@ class SecondScreenPresentation(
         }
     }
 
-    private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
-        if (drawable == null) {
-            Timber.w("[SecondScreenPresentation::drawableToBitmap] Drawable is null")
-            return null
-        }
-        
-        return runCatching {
-            when (drawable) {
-                is BitmapDrawable -> {
-                    Timber.d("[SecondScreenPresentation::drawableToBitmap] Converting BitmapDrawable")
-                    drawable.bitmap
-                }
-                is AdaptiveIconDrawable -> {
-                    Timber.d("[SecondScreenPresentation::drawableToBitmap] Converting AdaptiveIconDrawable")
-                    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1
-                    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1
-                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(bitmap)
-                    drawable.setBounds(0, 0, canvas.width, canvas.height)
-                    drawable.draw(canvas)
-                    bitmap
-                }
-                else -> {
-                    Timber.d("[SecondScreenPresentation::drawableToBitmap] Converting generic Drawable: ${drawable.javaClass.simpleName}")
-                    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 100
-                    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 100
-                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(bitmap)
-                    drawable.setBounds(0, 0, canvas.width, canvas.height)
-                    drawable.draw(canvas)
-                    bitmap
-                }
-            }
-        }.onFailure { e ->
-            Timber.e(e, "[SecondScreenPresentation::drawableToBitmap] Failed to convert drawable to bitmap")
-        }.getOrNull()
-    }
 
     @Composable
     private fun Cursor(x: Float, y: Float) {
