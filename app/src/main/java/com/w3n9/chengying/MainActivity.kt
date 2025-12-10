@@ -33,6 +33,8 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var presentationRepository: PresentationRepository
 
+    private var originalBrightness: Float = -1f
+
     private val displayChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.w3n9.chengying.DISPLAY_CONNECTION_CHANGED") {
@@ -125,11 +127,26 @@ class MainActivity : ComponentActivity() {
     fun enterTouchpadMode() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         hideSystemUI()
+        dimScreen()
     }
 
     fun exitTouchpadMode() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         showSystemUI()
+        restoreScreenBrightness()
+    }
+
+    private fun dimScreen() {
+        window.attributes = window.attributes.apply {
+            originalBrightness = screenBrightness
+            screenBrightness = 0.01f
+        }
+    }
+
+    private fun restoreScreenBrightness() {
+        window.attributes = window.attributes.apply {
+            screenBrightness = originalBrightness
+        }
     }
 
     private fun hideSystemUI() {

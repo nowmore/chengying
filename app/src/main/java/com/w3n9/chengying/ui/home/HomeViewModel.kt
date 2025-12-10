@@ -34,12 +34,7 @@ class HomeViewModel @Inject constructor(
     private val _events = MutableSharedFlow<HomeEvent>()
     val events: SharedFlow<HomeEvent> = _events.asSharedFlow()
 
-    val currentDisplayMode: StateFlow<DisplayMode> = displayRepository.currentDisplayMode
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = DisplayMode.DESKTOP
-        )
+
 
     val uiState: StateFlow<UiState<List<ExternalDisplay>>> = displayRepository.connectedDisplays
         .asResult()
@@ -68,14 +63,11 @@ class HomeViewModel @Inject constructor(
     val appIsLaunched: StateFlow<Boolean> = cursorRepository.isAppLaunched
 
     fun startSession(display: ExternalDisplay) {
-        val mode = currentDisplayMode.value
         viewModelScope.launch {
-            if (mode == DisplayMode.DESKTOP) {
-                cursorRepository.setTargetDisplayId(display.id)
-                cursorRepository.setAppLaunched(false) 
-                _touchpadModeActive.value = true
-            }
-            _events.emit(HomeEvent.StartDesktopMode(display, mode))
+            cursorRepository.setTargetDisplayId(display.id)
+            cursorRepository.setAppLaunched(false) 
+            _touchpadModeActive.value = true
+            _events.emit(HomeEvent.StartDesktopMode(display, DisplayMode.DESKTOP))
         }
     }
 
@@ -86,11 +78,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun setDisplayMode(mode: DisplayMode) {
-        viewModelScope.launch {
-            displayRepository.setDisplayMode(mode)
-        }
-    }
+
 
     fun consumeEvent() {
         // No-op

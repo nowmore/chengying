@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Tv
@@ -36,6 +37,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +56,6 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val touchpadModeActive by viewModel.touchpadModeActive.collectAsStateWithLifecycle()
-    val currentDisplayMode by viewModel.currentDisplayMode.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle(initialValue = null)
     val appIsLaunched by viewModel.appIsLaunched.collectAsStateWithLifecycle()
 
@@ -115,8 +116,6 @@ fun HomeScreen(
         } else {
             MainControlScreen(
                 uiState = uiState,
-                currentMode = currentDisplayMode,
-                onModeSelected = viewModel::setDisplayMode,
                 onStartSession = viewModel::startSession
             )
         }
@@ -183,8 +182,6 @@ fun TouchpadScreen(
 @Composable
 fun MainControlScreen(
     uiState: UiState<List<ExternalDisplay>>,
-    currentMode: DisplayMode,
-    onModeSelected: (DisplayMode) -> Unit,
     onStartSession: (ExternalDisplay) -> Unit
 ) {
     Scaffold(
@@ -205,28 +202,33 @@ fun MainControlScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            
-            DisplayModeSelector(currentMode, onModeSelected)
-            
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                when (uiState) {
-                    is UiState.Loading -> {
+            when (uiState) {
+                is UiState.Loading -> {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
-                    is UiState.Success -> {
-                        if (uiState.data.isEmpty()) {
+                }
+                is UiState.Success -> {
+                    if (uiState.data.isEmpty()) {
+                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             InfoMessageCard(
                                 icon = Icons.Default.Warning,
                                 title = "No Display Found",
                                 message = "Please connect an external display via USB-C or Miracast."
                             )
-                        } else {
-                            DisplayList(displays = uiState.data, onStartSession = onStartSession)
                         }
+                    } else {
+                        DisplayList(displays = uiState.data, onStartSession = onStartSession)
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        AccessibilityServiceStatus()
+                        
+                        Spacer(modifier = Modifier.weight(1f))
                     }
-                    is UiState.Error -> {
+                }
+                is UiState.Error -> {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                         InfoMessageCard(
                             icon = Icons.Default.Warning,
                             title = "Error",
@@ -239,26 +241,74 @@ fun MainControlScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DisplayModeSelector(
-    currentMode: DisplayMode,
-    onModeSelected: (DisplayMode) -> Unit
-) {
-    SingleChoiceSegmentedButtonRow(
-        modifier = Modifier.fillMaxWidth()
+fun AccessibilityServiceStatus() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    // State to track accessibility service status
+    var isEnabled by remember { mutableStateOf(com.w3n9.chengying.service.ChengyingAccessibilityService.isEnabled()) }
+    
+    // Update status when screen resumes
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isEnabled = com.w3n9.chengying.service.ChengyingAccessibilityService.isEnabled()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isEnabled) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.errorContainer
+            }
+        )
     ) {
-        DisplayMode.entries.forEachIndexed { index, mode ->
-            SegmentedButton(
-                selected = currentMode == mode,
-                onClick = { onModeSelected(mode) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = DisplayMode.entries.size)
-            ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = when(mode) {
-                        DisplayMode.MIRROR -> "Mirror Mode"
-                        DisplayMode.DESKTOP -> "Desktop Mode"
+                    text = "Accessibility Service",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (isEnabled) "Enabled" else "Disabled - Required for touch input",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            
+            if (!isEnabled) {
+                Button(
+                    onClick = {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
                     }
+                ) {
+                    Text("Settings")
+                }
+            } else {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.Check,
+                    contentDescription = "Enabled",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
                 )
             }
         }

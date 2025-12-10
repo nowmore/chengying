@@ -18,6 +18,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -314,8 +318,14 @@ class SecondScreenPresentation(
                     .background(Color.White.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
-                // Placeholder for app icon
-                Box(
+                // App icon using rememberAsyncImagePainter or BitmapPainter
+                app.icon?.let { drawable ->
+                    androidx.compose.foundation.Image(
+                        painter = rememberDrawablePainter(drawable),
+                        contentDescription = app.label,
+                        modifier = Modifier.size(48.dp)
+                    )
+                } ?: Box(
                     modifier = Modifier
                         .size(48.dp)
                         .background(Color.White.copy(alpha = 0.3f))
@@ -399,8 +409,13 @@ class SecondScreenPresentation(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // Placeholder for task icon
-                Box(
+                task.appIcon?.let { drawable ->
+                    androidx.compose.foundation.Image(
+                        painter = rememberDrawablePainter(drawable),
+                        contentDescription = task.appName,
+                        modifier = Modifier.size(64.dp)
+                    )
+                } ?: Box(
                     modifier = Modifier
                         .size(64.dp)
                         .background(Color.White.copy(alpha = 0.3f))
@@ -460,5 +475,34 @@ class SecondScreenPresentation(
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         _viewModelStore.clear()
         super.onDetachedFromWindow()
+    }
+}
+
+
+@Composable
+private fun rememberDrawablePainter(drawable: Drawable): Painter {
+    return remember(drawable) {
+        val bitmap = when (drawable) {
+            is BitmapDrawable -> drawable.bitmap
+            is AdaptiveIconDrawable -> {
+                val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 100
+                val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 100
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                    val canvas = Canvas(bitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                }
+            }
+            else -> {
+                val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 100
+                val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 100
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+                    val canvas = Canvas(bitmap)
+                    drawable.setBounds(0, 0, canvas.width, canvas.height)
+                    drawable.draw(canvas)
+                }
+            }
+        }
+        BitmapPainter(bitmap.asImageBitmap())
     }
 }
