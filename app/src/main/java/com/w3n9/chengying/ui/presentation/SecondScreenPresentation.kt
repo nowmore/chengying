@@ -37,11 +37,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -331,26 +335,44 @@ class SecondScreenPresentation(
     
     @Composable
     private fun TaskSwitcher(displayId: Int) {
-        val tasks by taskRepository.getRecentTasks(displayId).collectAsStateWithLifecycle(initialValue = emptyList())
+        var tasks by remember { mutableStateOf<List<TaskInfo>>(emptyList()) }
+        var isLoading by remember { mutableStateOf(true) }
+        
+        LaunchedEffect(Unit) {
+            taskRepository.getRecentTasks(displayId).collect { taskList ->
+                tasks = taskList
+                isLoading = false
+            }
+        }
+        
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.5f))
         ) {
-            if (tasks.isEmpty()) {
-                Text(
-                    text = "No recent tasks",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            } else {
-                LazyRow(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(tasks) { task ->
-                        TaskCard(task)
+            when {
+                isLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center),
+                        color = Color.White
+                    )
+                }
+                tasks.isEmpty() -> {
+                    Text(
+                        text = "No recent tasks",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                else -> {
+                    LazyRow(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(tasks) { task ->
+                            TaskCard(task)
+                        }
                     }
                 }
             }
@@ -365,7 +387,6 @@ class SecondScreenPresentation(
                 .onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInRoot()
                     taskSwitcherBounds[task.taskId] = bounds
-                    Timber.d("[TaskCard] Task ${task.taskId} bounds: left=${bounds.left}, top=${bounds.top}, right=${bounds.right}, bottom=${bounds.bottom}")
                 },
             elevation = CardDefaults.cardElevation(8.dp),
             colors = CardDefaults.cardColors(

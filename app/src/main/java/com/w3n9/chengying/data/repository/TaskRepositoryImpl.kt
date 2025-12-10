@@ -115,7 +115,7 @@ class TaskRepositoryImpl @Inject constructor(
                 )
             }
             
-            Timber.d("[TaskRepositoryImpl::getRecentTasks] Calling getRecentTasks with maxNum=100, flags=0, userId=0")
+
             val parceledListSlice = getRecentTasksMethod.invoke(manager, 100, 0, 0)
             
             if (parceledListSlice == null) {
@@ -170,9 +170,7 @@ class TaskRepositoryImpl @Inject constructor(
                 }.getOrNull()
             }
 
-            if (tasks.isNotEmpty()) {
-                Timber.i("[TaskRepositoryImpl::getRecentTasks] Emitting ${tasks.size} tasks for displayId=$displayId")
-            }
+            Timber.i("[TaskRepositoryImpl::getRecentTasks] Emitting ${tasks.size} tasks for displayId=$displayId")
             emit(tasks)
         }.onFailure { e ->
             Timber.e(e, "[TaskRepositoryImpl::getRecentTasks] Failed to get recent tasks")
