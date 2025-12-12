@@ -12,11 +12,7 @@ Chengying is an Android application that transforms your device into a desktop w
 ## Setup Requirements
 
 1. **Accessibility Permissions**: Enable accessibility for Chengying in system settings.
-2. **Developer Options**: 
-   - Enable "Force desktop mode" 
-   - Enable "Freeform window mode" and "Force activities to be resizable" (may be required)
-3. **Shizuku Permission**: Install Shizuku and grant permissions to Chengying.
-4. **HyperOS Specific**: Disable system optimization to allow landscape/fullscreen app launching.
+2. **Shizuku Permission**: Install Shizuku and grant permissions to Chengying.
 
 ## How to Use
 

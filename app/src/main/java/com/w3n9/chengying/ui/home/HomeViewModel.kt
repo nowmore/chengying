@@ -71,7 +71,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun stopDesktopMode() {
+    fun stopDesktopMode() {
         viewModelScope.launch {
             _touchpadModeActive.value = false
             _events.emit(HomeEvent.StopDesktopMode)

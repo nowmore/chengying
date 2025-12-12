@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        Timber.i("MainActivity onCreate, savedInstanceState=${if (savedInstanceState == null) "null" else "not null"}")
+        
         WindowCompat.setDecorFitsSystemWindows(window, false)
         
         enableEdgeToEdge()
@@ -114,7 +116,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        Timber.i("MainActivity onDestroy, isFinishing=$isFinishing")
+        // Dismiss presentation to restore mirror mode when app is killed
+        presentationRepository.dismissPresentation()
         unregisterReceiver(displayChangeReceiver)
+    }
+    
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Timber.i("MainActivity onConfigurationChanged: orientation=${newConfig.orientation}")
     }
     
     override fun onWindowFocusChanged(hasFocus: Boolean) {

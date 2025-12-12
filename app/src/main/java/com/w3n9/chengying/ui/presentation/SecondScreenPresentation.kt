@@ -161,6 +161,12 @@ class SecondScreenPresentation(
                     val apps by appRepository.getInstalledApps().collectAsStateWithLifecycle(initialValue = emptyList())
                     val isAppLaunched by cursorRepository.isAppLaunched.collectAsStateWithLifecycle()
                     val isTaskSwitcherVisible by cursorRepository.isTaskSwitcherVisible.collectAsStateWithLifecycle()
+                    val isScreenSaverActive by cursorRepository.isScreenSaverActive.collectAsStateWithLifecycle()
+
+                    // Start screen saver timer
+                    LaunchedEffect(Unit) {
+                        cursorRepository.startScreenSaverTimer()
+                    }
 
                     // Show cursor overlay immediately
                     LaunchedEffect(Unit) {
@@ -169,10 +175,12 @@ class SecondScreenPresentation(
                         Timber.i("[SecondScreenPresentation] Cursor overlay shown")
                     }
                     
-                    // Update cursor position in accessibility overlay
-                    LaunchedEffect(cursorState.x, cursorState.y, cursorState.isVisible) {
+                    // Update cursor position and visibility in accessibility overlay
+                    LaunchedEffect(cursorState.x, cursorState.y, cursorState.isVisible, isScreenSaverActive) {
                         val accessibilityService = com.w3n9.chengying.service.ChengyingAccessibilityService.getInstance()
-                        accessibilityService?.updateCursor(cursorState.x, cursorState.y, cursorState.isVisible)
+                        // Hide cursor when screen saver is active
+                        val shouldShowCursor = cursorState.isVisible && !isScreenSaverActive
+                        accessibilityService?.updateCursor(cursorState.x, cursorState.y, shouldShowCursor)
                     }
                     
                     // Hide/Show Presentation window based on app state
@@ -472,9 +480,15 @@ class SecondScreenPresentation(
     }
 
     override fun onDetachedFromWindow() {
+        Timber.i("[SecondScreenPresentation] onDetachedFromWindow - cleaning up")
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         _viewModelStore.clear()
         super.onDetachedFromWindow()
+    }
+    
+    override fun dismiss() {
+        Timber.i("[SecondScreenPresentation] dismiss called")
+        super.dismiss()
     }
 }
 

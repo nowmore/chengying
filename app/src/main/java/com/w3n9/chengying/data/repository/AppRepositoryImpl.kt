@@ -70,11 +70,6 @@ class AppRepositoryImpl @Inject constructor(
                 return
             }
 
-            // Force Landscape on the target display
-            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                executeShellCommand("wm user-rotation -d $displayId 1")
-            }
-
             val displayContext = context.createDisplayContext(targetDisplay)
             val metrics = displayContext.resources.displayMetrics
             val width = metrics.widthPixels
@@ -87,15 +82,12 @@ class AppRepositoryImpl @Inject constructor(
             }
             
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            //intent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             intent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
 
             val options = ActivityOptions.makeBasic()
             options.launchDisplayId = displayId
-
-            // Set launch bounds to trick apps into landscape
-            options.setLaunchBounds(Rect(0, 0, width, height))
 
             Timber.d("Launching app $packageName on display $displayId with bounds: $width x $height")
             context.startActivity(intent, options.toBundle())

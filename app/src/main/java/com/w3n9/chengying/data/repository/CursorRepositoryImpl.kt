@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,11 +29,18 @@ class CursorRepositoryImpl @Inject constructor(
     
     private val _isTaskSwitcherVisible = MutableStateFlow(false)
     override val isTaskSwitcherVisible: StateFlow<Boolean> = _isTaskSwitcherVisible.asStateFlow()
+    
+    private val _isScreenSaverActive = MutableStateFlow(false)
+    override val isScreenSaverActive: StateFlow<Boolean> = _isScreenSaverActive.asStateFlow()
 
     private var boundsWidth = 1920
     private var boundsHeight = 1080
     
     private var targetDisplayId: Int = 0
+    
+    private var lastInteractionTime = System.currentTimeMillis()
+    private var screenSaverJob: kotlinx.coroutines.Job? = null
+    private val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
 
     override fun setBounds(width: Int, height: Int) {
         boundsWidth = width
@@ -57,6 +65,7 @@ class CursorRepositoryImpl @Inject constructor(
     }
 
     override fun updatePosition(deltaX: Float, deltaY: Float) {
+        resetInteraction()
         _cursorState.update { current ->
             val newX = (current.x + deltaX).coerceIn(0f, boundsWidth.toFloat())
             val newY = (current.y + deltaY).coerceIn(0f, boundsHeight.toFloat())
@@ -69,7 +78,37 @@ class CursorRepositoryImpl @Inject constructor(
     }
 
     override suspend fun emitClick() {
+        resetInteraction()
         _clickEvents.emit(Unit)
+    }
+    
+    override fun startScreenSaverTimer() {
+        stopScreenSaverTimer()
+        screenSaverJob = coroutineScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                val currentTime = System.currentTimeMillis()
+                val idleTime = currentTime - lastInteractionTime
+                
+                if (idleTime >= com.w3n9.chengying.core.config.ScreenSaverConfig.TIMEOUT_MS && !_isScreenSaverActive.value) {
+                    _isScreenSaverActive.value = true
+                    timber.log.Timber.i("[CursorRepository] Screen saver activated after ${idleTime}ms idle")
+                }
+            }
+        }
+    }
+    
+    override fun stopScreenSaverTimer() {
+        screenSaverJob?.cancel()
+        screenSaverJob = null
+        _isScreenSaverActive.value = false
+    }
+    
+    private fun resetInteraction() {
+        lastInteractionTime = System.currentTimeMillis()
+        if (_isScreenSaverActive.value) {
+            _isScreenSaverActive.value = false
+        }
     }
 
     override fun updatePositionWithShizuku(deltaX: Float, deltaY: Float) {

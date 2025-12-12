@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
@@ -84,7 +85,14 @@ fun HomeScreen(
                 is HomeEvent.StopDesktopMode -> {
                     val activity = context.findActivity() as? MainActivity
                     if (activity != null) {
+                        // Hide cursor overlay
+                        val accessibilityService = com.w3n9.chengying.service.ChengyingAccessibilityService.getInstance()
+                        accessibilityService?.hideCursorOverlay()
+                        
+                        // Dismiss presentation
                         activity.presentationRepository.dismissPresentation()
+                        
+                        // Exit touchpad mode
                         activity.exitTouchpadMode()
                     }
                 }
@@ -127,51 +135,105 @@ fun TouchpadScreen(
     viewModel: HomeViewModel,
     appIsLaunched: Boolean
 ) {
+    var isScreenSaverActive by remember { mutableStateOf(false) }
+    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    
+    // Screen saver timer - check every second
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            val currentTime = System.currentTimeMillis()
+            val idleTime = currentTime - lastInteractionTime
+            
+            // Activate screen saver using shared timeout configuration
+            if (idleTime >= com.w3n9.chengying.core.config.ScreenSaverConfig.TIMEOUT_MS && !isScreenSaverActive) {
+                isScreenSaverActive = true
+            }
+        }
+    }
+    
+    val resetScreenSaver = {
+        lastInteractionTime = System.currentTimeMillis()
+        if (isScreenSaverActive) {
+            isScreenSaverActive = false
+        }
+    }
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, _, _ ->
+                    resetScreenSaver()
                     viewModel.onTouchpadPan(pan.x, pan.y)
                 }
             }
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { viewModel.onTouchpadClick() }
+                    onTap = { 
+                        resetScreenSaver()
+                        viewModel.onTouchpadClick() 
+                    }
                 )
             }
     ) {
-        // Controls at the bottom
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 32.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            // Home button (always visible)
+        // Show controls only when screen saver is not active
+        if (!isScreenSaverActive) {
+            // Back button at top-left
             FloatingActionButton(
-                onClick = { viewModel.onHomeClicked() },
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+                onClick = { 
+                    resetScreenSaver()
+                    viewModel.stopDesktopMode() 
+                },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 32.dp, top = 32.dp),
+                containerColor = MaterialTheme.colorScheme.surface
             ) {
-                Icon(Icons.Default.Home, contentDescription = "Home")
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
             }
             
-            // Task Switcher button (always visible)
-            FloatingActionButton(
-                onClick = { viewModel.onToggleTaskSwitcher() },
-                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            // Bottom controls
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Icon(Icons.Default.Apps, contentDescription = "Task Switcher")
-            }
-
-            // Close button (visible only when an app is launched)
-            if (appIsLaunched) {
+                // Home button (always visible)
                 FloatingActionButton(
-                    onClick = { viewModel.onCloseAppClicked() },
-                    containerColor = MaterialTheme.colorScheme.errorContainer
+                    onClick = { 
+                        resetScreenSaver()
+                        viewModel.onHomeClicked() 
+                    },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close App", tint = MaterialTheme.colorScheme.onErrorContainer)
+                    Icon(Icons.Default.Home, contentDescription = "Home")
+                }
+                
+                // Task Switcher button (always visible)
+                FloatingActionButton(
+                    onClick = { 
+                        resetScreenSaver()
+                        viewModel.onToggleTaskSwitcher() 
+                    },
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Icon(Icons.Default.Apps, contentDescription = "Task Switcher")
+                }
+
+                // Close button (visible only when an app is launched)
+                if (appIsLaunched) {
+                    FloatingActionButton(
+                        onClick = { 
+                            resetScreenSaver()
+                            viewModel.onCloseAppClicked() 
+                        },
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close App", tint = MaterialTheme.colorScheme.onErrorContainer)
+                    }
                 }
             }
         }

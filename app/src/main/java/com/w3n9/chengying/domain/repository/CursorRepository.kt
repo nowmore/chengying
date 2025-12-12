@@ -9,6 +9,7 @@ interface CursorRepository {
     val clickEvents: SharedFlow<Unit>
     val isAppLaunched: StateFlow<Boolean>
     val isTaskSwitcherVisible: StateFlow<Boolean>
+    val isScreenSaverActive: StateFlow<Boolean>
 
     fun setAppLaunched(launched: Boolean)
     fun toggleTaskSwitcher()
@@ -19,4 +20,6 @@ interface CursorRepository {
     fun setTargetDisplayId(displayId: Int)
     fun updatePositionWithShizuku(deltaX: Float, deltaY: Float)
     suspend fun emitClickWithShizuku()
+    fun startScreenSaverTimer()
+    fun stopScreenSaverTimer()
 }
