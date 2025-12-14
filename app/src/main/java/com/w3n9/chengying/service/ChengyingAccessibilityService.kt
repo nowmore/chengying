@@ -2,6 +2,7 @@ package com.w3n9.chengying.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.annotation.SuppressLint
 import android.graphics.PixelFormat
 import android.graphics.Path
 import android.os.Build
@@ -10,6 +11,7 @@ import android.view.accessibility.AccessibilityEvent
 import com.w3n9.chengying.ui.overlay.CursorOverlayView
 import timber.log.Timber
 
+@SuppressLint("AccessibilityPolicy")
 class ChengyingAccessibilityService : AccessibilityService() {
 
     private var cursorOverlay: CursorOverlayView? = null
@@ -21,12 +23,10 @@ class ChengyingAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         Timber.i("[ChengyingAccessibilityService] Service connected")
         Timber.i("[ChengyingAccessibilityService] Android version: ${Build.VERSION.SDK_INT}")
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            val canPerform = serviceInfo?.flags?.and(android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE) != 0
-            Timber.i("[ChengyingAccessibilityService] Touch exploration enabled: $canPerform")
-        }
-        
+
+        val canPerform = serviceInfo?.flags?.and(android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE) != 0
+        Timber.i("[ChengyingAccessibilityService] Touch exploration enabled: $canPerform")
+
         instance = this
     }
     
@@ -41,7 +41,7 @@ class ChengyingAccessibilityService : AccessibilityService() {
         // Get WindowManager for the specific display
         windowManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                val displayManager = getSystemService(android.content.Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+                val displayManager = getSystemService(DISPLAY_SERVICE) as android.hardware.display.DisplayManager
                 val targetDisplay = displayManager.getDisplay(displayId)
                 if (targetDisplay != null) {
                     val displayContext = createDisplayContext(targetDisplay)
@@ -61,12 +61,7 @@ class ChengyingAccessibilityService : AccessibilityService() {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY
-            },
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -130,7 +125,7 @@ class ChengyingAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
         
         // Try to set display ID if supported (Android 11+)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 gestureBuilder.setDisplayId(displayId)
                 Timber.d("[ChengyingAccessibilityService] Display ID set to $displayId")

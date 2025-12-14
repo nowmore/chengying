@@ -10,6 +10,7 @@ import com.w3n9.chengying.domain.model.ExternalDisplay
 import com.w3n9.chengying.domain.repository.CursorRepository
 import com.w3n9.chengying.domain.repository.DisplayRepository
 import com.w3n9.chengying.domain.repository.AppRepository
+import com.w3n9.chengying.domain.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -23,9 +24,10 @@ sealed interface HomeEvent {
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val displayRepository: DisplayRepository,
+    displayRepository: DisplayRepository,
     private val cursorRepository: CursorRepository,
-    private val appRepository: AppRepository
+    private val appRepository: AppRepository,
+    private val taskRepository: TaskRepository
 ) : ViewModel() {
 
     private val _touchpadModeActive = MutableStateFlow(false)
@@ -34,7 +36,7 @@ class HomeViewModel @Inject constructor(
     private val _events = MutableSharedFlow<HomeEvent>()
     val events: SharedFlow<HomeEvent> = _events.asSharedFlow()
 
-
+    private var currentDisplayId: Int = 0
 
     val uiState: StateFlow<UiState<List<ExternalDisplay>>> = displayRepository.connectedDisplays
         .asResult()
@@ -64,6 +66,7 @@ class HomeViewModel @Inject constructor(
 
     fun startSession(display: ExternalDisplay) {
         viewModelScope.launch {
+            currentDisplayId = display.id
             cursorRepository.setTargetDisplayId(display.id)
             cursorRepository.setAppLaunched(false) 
             _touchpadModeActive.value = true
@@ -73,6 +76,21 @@ class HomeViewModel @Inject constructor(
 
     fun stopDesktopMode() {
         viewModelScope.launch {
+            // Close all apps on the secondary display before stopping
+            if (currentDisplayId != 0) {
+                Timber.i("[HomeViewModel::stopDesktopMode] Closing all apps on display $currentDisplayId")
+                
+                // Get packages on display using TaskRepository
+                val packages = taskRepository.getPackagesOnDisplay(currentDisplayId)
+                Timber.d("[HomeViewModel::stopDesktopMode] Found ${packages.size} packages to close: $packages")
+                
+                // Close each package
+                packages.forEach { packageName ->
+                    appRepository.forceStopPackage(packageName)
+                }
+            }
+            
+            cursorRepository.hideCursorOverlay()
             _touchpadModeActive.value = false
             _events.emit(HomeEvent.StopDesktopMode)
         }
@@ -99,7 +117,12 @@ class HomeViewModel @Inject constructor(
     }
     
     fun onCloseAppClicked() {
-        appRepository.closeActiveApp()
+        viewModelScope.launch {
+            val result = appRepository.closeActiveApp()
+            if (result is com.w3n9.chengying.core.common.Result.Error) {
+                Timber.e(result.exception, "[HomeViewModel::onCloseAppClicked] Failed to close app")
+            }
+        }
     }
 
     fun onToggleTaskSwitcher() {

@@ -231,4 +231,63 @@ class TaskRepositoryImpl @Inject constructor(
             Timber.e(e, "[TaskRepositoryImpl::switchToTask] Failed to switch task: $taskId")
         }
     }
+
+    @SuppressLint("PrivateApi")
+    override fun getPackagesOnDisplay(displayId: Int): List<String> {
+        val manager = activityTaskManager
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED || manager == null) {
+            Timber.w("[TaskRepositoryImpl::getPackagesOnDisplay] Shizuku permission denied or manager null")
+            return emptyList()
+        }
+
+        return runCatching {
+            val parcelableListClass = Class.forName("android.content.pm.ParceledListSlice")
+            
+            val getRecentTasksMethod = manager.javaClass.getMethod(
+                "getRecentTasks",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            )
+
+            val parceledListSlice = getRecentTasksMethod.invoke(manager, 100, 0, 0)
+            
+            if (parceledListSlice == null) {
+                Timber.w("[TaskRepositoryImpl::getPackagesOnDisplay] getRecentTasks returned null")
+                return@runCatching emptyList()
+            }
+            
+            val getListMethod = parcelableListClass.getMethod("getList")
+            @Suppress("UNCHECKED_CAST")
+            val recentTaskInfoList = getListMethod.invoke(parceledListSlice) as? List<*>
+            
+            if (recentTaskInfoList == null) {
+                Timber.w("[TaskRepositoryImpl::getPackagesOnDisplay] getList returned null")
+                return@runCatching emptyList()
+            }
+
+            val packages = recentTaskInfoList.mapNotNull { taskInfoObj ->
+                runCatching {
+                    val taskDisplayId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        taskInfoObj?.javaClass?.getField("displayId")?.getInt(taskInfoObj) ?: -1
+                    } else {
+                        -1
+                    }
+                    val baseIntent = taskInfoObj?.javaClass?.getField("baseIntent")?.get(taskInfoObj) as? android.content.Intent
+                    val packageName = baseIntent?.component?.packageName
+
+                    if (taskDisplayId == displayId && packageName != null && packageName != context.packageName) {
+                        packageName
+                    } else {
+                        null
+                    }
+                }.getOrNull()
+            }.distinct()
+
+            Timber.i("[TaskRepositoryImpl::getPackagesOnDisplay] Found ${packages.size} packages on display $displayId: $packages")
+            packages
+        }.onFailure { e ->
+            Timber.e(e, "[TaskRepositoryImpl::getPackagesOnDisplay] Failed to get packages")
+        }.getOrDefault(emptyList())
+    }
 }

@@ -1,6 +1,7 @@
 package com.w3n9.chengying
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -57,17 +58,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            Timber.i("Wallpaper permission granted.")
-            // Optional: Can trigger a refresh of the presentation if it's already visible
-        } else {
-            Timber.w("Wallpaper permission denied.")
-        }
-    }
-
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -88,43 +79,6 @@ class MainActivity : ComponentActivity() {
         } else {
             registerReceiver(displayChangeReceiver, filter)
         }
-
-        // Request wallpaper permission on create
-        requestWallpaperPermission()
-    }
-
-    private fun requestWallpaperPermission() {
-        when {
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                // Permission is already granted
-                Timber.d("Wallpaper permission already granted.")
-            }
-            shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE) -> {
-                // Optional: Show a rationale to the user
-                Timber.i("Showing rationale for wallpaper permission.")
-                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-            else -> {
-                // Directly request the permission
-                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        Timber.i("MainActivity onDestroy, isFinishing=$isFinishing")
-        // Dismiss presentation to restore mirror mode when app is killed
-        presentationRepository.dismissPresentation()
-        unregisterReceiver(displayChangeReceiver)
-    }
-    
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        Timber.i("MainActivity onConfigurationChanged: orientation=${newConfig.orientation}")
     }
     
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -177,5 +131,19 @@ class MainActivity : ComponentActivity() {
              controller.show(WindowInsetsCompat.Type.statusBars())
              controller.show(WindowInsetsCompat.Type.navigationBars())
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        Timber.i("MainActivity onDestroy, isFinishing=$isFinishing")
+        // Dismiss presentation to restore mirror mode when app is killed
+        presentationRepository.dismissPresentation()
+        // Unregister broadcast receiver
+        unregisterReceiver(displayChangeReceiver)
+    }
+    
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Timber.i("MainActivity onConfigurationChanged: orientation=${newConfig.orientation}")
     }
 }

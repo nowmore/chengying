@@ -6,4 +6,5 @@ import kotlinx.coroutines.flow.Flow
 interface TaskRepository {
     fun getRecentTasks(displayId: Int): Flow<List<TaskInfo>>
     fun switchToTask(taskId: Int)
+    fun getPackagesOnDisplay(displayId: Int): List<String>
 }

@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
 import timber.log.Timber
+import androidx.core.graphics.withTranslation
 
 class CursorOverlayView(context: Context) : View(context) {
     
@@ -46,23 +47,21 @@ class CursorOverlayView(context: Context) : View(context) {
         
         if (!isVisible) return
         
-        canvas.save()
-        canvas.translate(cursorX, cursorY)
-        
-        // Draw cursor shape (arrow)
-        cursorPath.reset()
-        cursorPath.moveTo(0f, 0f)
-        cursorPath.lineTo(0f, 60f)
-        cursorPath.lineTo(24f, 42f)
-        cursorPath.lineTo(60f, 42f)
-        cursorPath.close()
-        
-        // Draw fill
-        canvas.drawPath(cursorPath, cursorPaint)
-        
-        // Draw stroke
-        canvas.drawPath(cursorPath, cursorStrokePaint)
-        
-        canvas.restore()
+        canvas.withTranslation(cursorX, cursorY) {
+            // Draw cursor shape (arrow)
+            cursorPath.reset()
+            cursorPath.moveTo(0f, 0f)
+            cursorPath.lineTo(0f, 60f)
+            cursorPath.lineTo(24f, 42f)
+            cursorPath.lineTo(60f, 42f)
+            cursorPath.close()
+
+            // Draw fill
+            drawPath(cursorPath, cursorPaint)
+
+            // Draw stroke
+            drawPath(cursorPath, cursorStrokePaint)
+
+        }
     }
 }

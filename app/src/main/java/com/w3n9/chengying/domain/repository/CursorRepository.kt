@@ -22,4 +22,9 @@ interface CursorRepository {
     suspend fun emitClickWithShizuku()
     fun startScreenSaverTimer()
     fun stopScreenSaverTimer()
+
+    // Cursor overlay control (abstracts AccessibilityService)
+    fun showCursorOverlay(displayId: Int)
+    fun hideCursorOverlay()
+    fun updateCursorOverlay()
 }

@@ -27,8 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
@@ -85,10 +85,7 @@ fun HomeScreen(
                 is HomeEvent.StopDesktopMode -> {
                     val activity = context.findActivity() as? MainActivity
                     if (activity != null) {
-                        // Hide cursor overlay
-                        val accessibilityService = com.w3n9.chengying.service.ChengyingAccessibilityService.getInstance()
-                        accessibilityService?.hideCursorOverlay()
-                        
+                        // Cursor overlay is hidden by ViewModel via CursorRepository
                         // Dismiss presentation
                         activity.presentationRepository.dismissPresentation()
                         
@@ -136,7 +133,7 @@ fun TouchpadScreen(
     appIsLaunched: Boolean
 ) {
     var isScreenSaverActive by remember { mutableStateOf(false) }
-    var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    var lastInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     
     // Screen saver timer - check every second
     LaunchedEffect(Unit) {
@@ -191,7 +188,7 @@ fun TouchpadScreen(
                     .padding(start = 32.dp, top = 32.dp),
                 containerColor = MaterialTheme.colorScheme.surface
             ) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             
             // Bottom controls
@@ -367,7 +364,7 @@ fun AccessibilityServiceStatus() {
                 }
             } else {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.Check,
+                    imageVector = Icons.Default.Check,
                     contentDescription = "Enabled",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(32.dp)

@@ -14,7 +14,7 @@ class AccessibilityInputManager @Inject constructor() {
 
     suspend fun injectClick(x: Float, y: Float, displayId: Int): Boolean = withContext(Dispatchers.Main) {
         val service = ChengyingAccessibilityService.getInstance()
-        
+
         if (service == null) {
             Timber.w("[AccessibilityInputManager::injectClick] Accessibility service not enabled")
             return@withContext false
@@ -29,12 +29,33 @@ class AccessibilityInputManager @Inject constructor() {
         }
     }
 
-    fun injectMotionEvent(action: Int, x: Float, y: Float, displayId: Int) {
-        // Not implemented for accessibility service
-        Timber.d("[AccessibilityInputManager::injectMotionEvent] Not implemented")
-    }
-
     fun isEnabled(): Boolean {
         return ChengyingAccessibilityService.isEnabled()
+    }
+
+    fun showCursorOverlay(displayId: Int) {
+        val service = ChengyingAccessibilityService.getInstance()
+        if (service == null) {
+            Timber.w("[AccessibilityInputManager::showCursorOverlay] Accessibility service not enabled")
+            return
+        }
+        service.showCursorOverlay(displayId)
+    }
+
+    fun hideCursorOverlay() {
+        val service = ChengyingAccessibilityService.getInstance()
+        if (service == null) {
+            Timber.w("[AccessibilityInputManager::hideCursorOverlay] Accessibility service not enabled")
+            return
+        }
+        service.hideCursorOverlay()
+    }
+
+    fun updateCursor(x: Float, y: Float, visible: Boolean) {
+        val service = ChengyingAccessibilityService.getInstance()
+        if (service == null) {
+            return // Silent fail - cursor updates are frequent
+        }
+        service.updateCursor(x, y, visible)
     }
 }
