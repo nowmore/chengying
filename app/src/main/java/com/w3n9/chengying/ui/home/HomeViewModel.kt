@@ -63,12 +63,13 @@ class HomeViewModel @Inject constructor(
         )
 
     val appIsLaunched: StateFlow<Boolean> = cursorRepository.isAppLaunched
+    val cursorState = cursorRepository.cursorState
 
     fun startSession(display: ExternalDisplay) {
         viewModelScope.launch {
             currentDisplayId = display.id
             cursorRepository.setTargetDisplayId(display.id)
-            cursorRepository.setAppLaunched(false) 
+            cursorRepository.setAppLaunched(false)
             _touchpadModeActive.value = true
             _events.emit(HomeEvent.StartDesktopMode(display, DisplayMode.DESKTOP))
         }
@@ -115,6 +116,10 @@ class HomeViewModel @Inject constructor(
     fun onHomeClicked() {
         appRepository.minimizeApp()
     }
+
+    fun onBackClicked() {
+        appRepository.sendBackEvent(currentDisplayId)
+    }
     
     fun onCloseAppClicked() {
         viewModelScope.launch {
@@ -127,5 +132,24 @@ class HomeViewModel @Inject constructor(
 
     fun onToggleTaskSwitcher() {
         cursorRepository.toggleTaskSwitcher()
+    }
+
+    /**
+     * Handle two-finger swipe gesture
+     * @param startX Start X position (cursor position when first finger held)
+     * @param startY Start Y position (cursor position when first finger held)
+     * @param deltaX Horizontal swipe delta from second finger
+     * @param deltaY Vertical swipe delta from second finger
+     */
+    fun onTwoFingerSwipe(startX: Float, startY: Float, deltaX: Float, deltaY: Float) {
+        // Use a fixed center point to avoid swipe overlap issues
+        // Swipe in the same direction as finger movement
+        val centerX = startX
+        val centerY = startY
+        val endX = centerX + deltaX
+        val endY = centerY + deltaY
+        Timber.d("[HomeViewModel::onTwoFingerSwipe] Swipe delta ($deltaX,$deltaY)")
+        // Use very short duration (50ms) so swipes don't overlap
+        appRepository.injectSwipe(currentDisplayId, centerX, centerY, endX, endY, durationMs = 50)
     }
 }

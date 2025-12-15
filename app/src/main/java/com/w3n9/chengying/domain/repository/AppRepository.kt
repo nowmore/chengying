@@ -17,5 +17,10 @@ interface AppRepository {
     
     fun forceStopPackage(packageName: String)
     
+    fun sendBackEvent(displayId: Int)
+    
+    fun injectSwipe(displayId: Int, startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Int = 300)
+    
     fun minimizeApp()
 }
+

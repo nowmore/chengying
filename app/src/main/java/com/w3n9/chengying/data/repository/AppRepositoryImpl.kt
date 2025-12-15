@@ -156,6 +156,37 @@ class AppRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun sendBackEvent(displayId: Int) {
+        Timber.i("[AppRepositoryImpl::sendBackEvent] Sending BACK event to display $displayId")
+        runCatching {
+            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                // KEYCODE_BACK = 4
+                executeShellCommand("input -d $displayId keyevent 4")
+                Timber.d("[AppRepositoryImpl::sendBackEvent] BACK event sent to display $displayId")
+            } else {
+                Timber.w("[AppRepositoryImpl::sendBackEvent] Shizuku permission not granted")
+            }
+        }.onFailure { e ->
+            Timber.e(e, "[AppRepositoryImpl::sendBackEvent] Failed to send BACK event")
+        }
+    }
+
+    override fun injectSwipe(displayId: Int, startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Int) {
+        Timber.d("[AppRepositoryImpl::injectSwipe] Swipe on display $displayId: ($startX,$startY) -> ($endX,$endY), duration=$durationMs")
+        runCatching {
+            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+                // input swipe <x1> <y1> <x2> <y2> [duration(ms)]
+                val cmd = "input -d $displayId swipe ${startX.toInt()} ${startY.toInt()} ${endX.toInt()} ${endY.toInt()} $durationMs"
+                executeShellCommand(cmd)
+                Timber.d("[AppRepositoryImpl::injectSwipe] Swipe injected successfully")
+            } else {
+                Timber.w("[AppRepositoryImpl::injectSwipe] Shizuku permission not granted")
+            }
+        }.onFailure { e ->
+            Timber.e(e, "[AppRepositoryImpl::injectSwipe] Failed to inject swipe")
+        }
+    }
+
     private fun executeShellCommand(command: String) {
         val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
             "newProcess",
@@ -167,5 +198,3 @@ class AppRepositoryImpl @Inject constructor(
         newProcessMethod.invoke(null, arrayOf("sh", "-c", command), null, null) as Process
     }
 }
-
-

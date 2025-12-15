@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -156,23 +157,92 @@ fun TouchpadScreen(
         }
     }
     
+    // Cursor position for two-finger swipe start point
+    val cursorState by viewModel.cursorState.collectAsStateWithLifecycle()
+    
+    // Track touch state
+    var primaryPointerId by remember { mutableIntStateOf(-1) }
+    var primaryTouchDownTime by remember { mutableLongStateOf(0L) }
+    var isTwoFingerMode by remember { mutableStateOf(false) }
+    var twoFingerSwipeStartX by remember { mutableFloatStateOf(0f) }
+    var twoFingerSwipeStartY by remember { mutableFloatStateOf(0f) }
+    var lastSecondFingerX by remember { mutableFloatStateOf(0f) }
+    var lastSecondFingerY by remember { mutableFloatStateOf(0f) }
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, _, _ ->
-                    resetScreenSaver()
-                    viewModel.onTouchpadPan(pan.x, pan.y)
-                }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { 
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pointers = event.changes.filter { it.pressed }
+                        
                         resetScreenSaver()
-                        viewModel.onTouchpadClick() 
+                        
+                        when (pointers.size) {
+                            0 -> {
+                                // All fingers lifted
+                                if (!isTwoFingerMode && primaryPointerId != -1) {
+                                    // Single finger lifted - check for tap
+                                    val touchDuration = System.currentTimeMillis() - primaryTouchDownTime
+                                    if (touchDuration < 200) {
+                                        viewModel.onTouchpadClick()
+                                    }
+                                }
+                                primaryPointerId = -1
+                                isTwoFingerMode = false
+                            }
+                            1 -> {
+                                val pointer = pointers.first()
+                                if (primaryPointerId == -1) {
+                                    // First touch
+                                    primaryPointerId = pointer.id.value.toInt()
+                                    primaryTouchDownTime = System.currentTimeMillis()
+                                } else if (!isTwoFingerMode) {
+                                    // Single finger movement - pan cursor
+                                    val change = pointer.positionChange()
+                                    if (change.x != 0f || change.y != 0f) {
+                                        viewModel.onTouchpadPan(change.x, change.y)
+                                    }
+                                }
+                                pointer.consume()
+                            }
+                            else -> {
+                                // Two or more fingers
+                                if (!isTwoFingerMode) {
+                                    // Entering two-finger mode
+                                    isTwoFingerMode = true
+                                    twoFingerSwipeStartX = pointers[1].position.x
+                                    twoFingerSwipeStartY = pointers[1].position.y
+                                    lastSecondFingerX = twoFingerSwipeStartX
+                                    lastSecondFingerY = twoFingerSwipeStartY
+                                } else {
+                                    // Track second finger movement and inject swipe continuously
+                                    val secondFinger = pointers.getOrNull(1)
+                                    if (secondFinger != null) {
+                                        val newX = secondFinger.position.x
+                                        val newY = secondFinger.position.y
+                                        val deltaX = newX - lastSecondFingerX
+                                        val deltaY = newY - lastSecondFingerY
+                                        
+                                        // Trigger swipe if there's significant movement
+                                        if (kotlin.math.abs(deltaX) > 5 || kotlin.math.abs(deltaY) > 5) {
+                                            viewModel.onTwoFingerSwipe(
+                                                cursorState.x, cursorState.y,
+                                                deltaX * 3, deltaY * 3  // Scale for more responsive swipe
+                                            )
+                                            lastSecondFingerX = newX
+                                            lastSecondFingerY = newY
+                                        }
+                                    }
+                                }
+                                pointers.forEach { it.consume() }
+                            }
+                        }
                     }
-                )
+                }
             }
     ) {
         // Show controls only when screen saver is not active
@@ -222,6 +292,18 @@ fun TouchpadScreen(
 
                 // Close button (visible only when an app is launched)
                 if (appIsLaunched) {
+                    // Back button
+                    FloatingActionButton(
+                        onClick = { 
+                            resetScreenSaver()
+                            viewModel.onBackClicked() 
+                        },
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+                    
+                    // Close button
                     FloatingActionButton(
                         onClick = { 
                             resetScreenSaver()
